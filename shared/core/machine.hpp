@@ -66,6 +66,7 @@ inline void describe(std::vector<Param>& params, std::initializer_list<std::pair
 struct Preset {
     std::string name;
     std::vector<float> values;   // plain values for the first values.size() params, in table order
+    float mix = -1;              // the kit's wet/dry in % (e.g. 30 for an echo), < 0 = leave it
 };
 
 // What the machine shows besides its parameters, refreshed after each set_params().

@@ -120,12 +120,16 @@ Editor::Editor(Processor& p) : AudioProcessorEditor(p), proc_(p) {
         rows_.push_back(std::move(r));
     }
 
-    presets_.setTextWhenNothingSelected("Factory presets");
+    presets_.setTextWhenNothingSelected("Presets");
     presets_.setTextWhenNoChoicesAvailable("(load the ROMs first)");
     presets_.onChange = [this] {
-        int i = presets_.getSelectedId() - 1;
-        if (i >= 0 && i < int(presetList_.size())) proc_.applyPreset(presetList_[size_t(i)]);
+        const int id = presets_.getSelectedId();
         presets_.setSelectedId(0, juce::dontSendNotification);
+        if (id == kChooseRomsItem) {
+            chooseRoms();
+            return;
+        }
+        if (id >= 1 && id <= int(presetList_.size())) proc_.applyPreset(presetList_[size_t(id - 1)]);
     };
     addAndMakeVisible(presets_);
     romsButton_.onClick = [this] { chooseRoms(); };
@@ -250,8 +254,10 @@ void Editor::layoutNative() {
         panelView_->setBounds(b.removeFromTop(int(std::lround(L.height * kPanelPxPerMm))).withWidth(int(std::lround(L.width * kPanelPxPerMm))));
         b.removeFromTop(12);
         auto bar = b.removeFromTop(28);
-        romsButton_.setBounds(bar.removeFromRight(140));
-        bar.removeFromRight(8);
+        if (romsShown_) {
+            romsButton_.setBounds(bar.removeFromRight(140));
+            bar.removeFromRight(8);
+        }
         presets_.setBounds(bar.removeFromRight(320));
         b.removeFromTop(8);
         status_.setBounds(b.removeFromTop(20));
@@ -308,8 +314,10 @@ void Editor::layoutNative() {
     }
     b.removeFromTop(12);
     auto bar = b.removeFromTop(28);
-    romsButton_.setBounds(bar.removeFromRight(140));
-    bar.removeFromRight(8);
+    if (romsShown_) {
+        romsButton_.setBounds(bar.removeFromRight(140));
+        bar.removeFromRight(8);
+    }
     presets_.setBounds(bar);
     b.removeFromTop(8);
     status_.setBounds(b.removeFromTop(20));
@@ -345,14 +353,22 @@ void Editor::timerCallback() {
     if (!r.status.empty()) st += (st.isEmpty() ? "" : "  |  ") + juce::String(r.status);
     status_.setText(st, juce::dontSendNotification);
     romsButton_.setTooltip(proc_.statusOk() ? "In use: " + proc_.status() : juce::String("Choose the ROM files or their folder, or drop them on the window"));
-    if (have && presetList_.empty()) refreshPresets();
-    presets_.setVisible(!have || !presetList_.empty());   // machines without factory presets: no menu
+    if (have && presets_.getNumItems() == 0) refreshPresets();
+    // Once a full ROM set runs, the button goes: choosing other ROMs is the presets menu's last item
+    // (or a drop on the window).
+    if (romsShown_ != !proc_.statusOk()) {
+        romsShown_ = !proc_.statusOk();
+        romsButton_.setVisible(romsShown_);
+        resized();
+    }
 }
 
 void Editor::refreshPresets() {
     presetList_ = proc_.host().presets();
     presets_.clear(juce::dontSendNotification);
     for (size_t i = 0; i < presetList_.size(); i++) presets_.addItem(presetList_[i].name, int(i) + 1);
+    if (!presetList_.empty()) presets_.addSeparator();
+    presets_.addItem("Choose other ROMs...", kChooseRomsItem);
 }
 
 void Editor::chooseRoms() {
@@ -366,6 +382,7 @@ void Editor::chooseRoms() {
                               if (!paths.isEmpty()) {
                                   proc_.loadRoms(paths);
                                   presetList_.clear();
+                                  presets_.clear(juce::dontSendNotification);
                               }
                           });
 }
@@ -373,6 +390,7 @@ void Editor::chooseRoms() {
 void Editor::filesDropped(const juce::StringArray& files, int, int) {
     proc_.loadRoms(files);
     presetList_.clear();
+    presets_.clear(juce::dontSendNotification);
 }
 
 }  // namespace kit

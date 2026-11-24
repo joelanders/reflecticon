@@ -64,6 +64,8 @@ private:
     std::vector<Preset> presetList_;
     std::unique_ptr<juce::FileChooser> chooser_;
     bool hasPanel_ = false;
+    bool romsShown_ = true;                     // the ROM button, while the ROMs need attention
+    static constexpr int kChooseRomsItem = 100000;   // the presets menu's last item
     std::vector<juce::String> groups_;          // Param::group names, in order
     std::vector<juce::Rectangle<int>> boxes_;   // their boxes, in the native layout
     int nativeW_ = 0, nativeH_ = 0;   // the layout's own size; the window shows it scaled

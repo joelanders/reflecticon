@@ -151,6 +151,48 @@ public:
         return o;
     }
 
+    // The unit had nine user stores and no factory programs. These are ours: set-ups from the user
+    // manual's section 2.5 (marked "manual") and a few more. They set the panel and keypad (the first
+    // 19 parameters, through Trigger) and the kit's wet/dry, never the unit options (RAM, boards,
+    // analog stages, smooth pitch). F/B gain is pot rotation: the loop gain is ~0.64 at 70 %, ~0.95 at
+    // 80 % (fb_gain_law), so the repeats run away a little past 80. The manual's VCO ADT is 18 ms with
+    // depth on '9' and speed '2'-'3': depth 9/10 taken as 18 %, and the knob's speed scale is unknown,
+    // so 0.6 Hz, which swings the pitch ~1.2 % (18 ms x 18 % x 2 pi f), near its 1.015 pitch-change ADT.
+    std::vector<kit::Preset> presets() const override {
+        struct Row {
+            const char* name;
+            float dA, dB, pA, pB, inA, inB, fbA, fbB, flA, flB, out, vco, speed, depth, phA, mono, mix_out, mix;
+        };
+        static const Row rows[] = {
+            //                               dA    dB    pA     pB     inA inB  fbA fbB flA flB out vco spd   dep phA mono mixo  wet
+            {"Echo 84 ms (manual)",          84,   168,  1.0f,  1.0f,  0, -30, 60, 0,  30, 0,  6,  0, 1.0f, 0,  0,  1,   1,   35},
+            {"ADT 18 ms, VCO (manual)",      18,   0,    1.0f,  1.0f,  0, -30, 0,  0,  0,  0,  6,  1, 0.6f, 18, 0,  1,   1,   50},
+            {"Pitch ADT 1.015 (manual)",     30,   0,    1.015f,1.0f,  0, -30, 0,  0,  0,  0,  6,  0, 1.0f, 0,  0,  1,   1,   50},
+            {"Flanging near zero (manual)",  0,    2,    1.0f,  1.0f,  0, 0,   0,  60, 0,  0,  6,  1, 0.15f,20, 0,  1,   1,   100},
+            {"Wide double",                  23,   31,   1.008f,0.992f,0, 0,   0,  0,  0,  0,  0,  0, 1.0f, 0,  0,  1,   0,   50},
+            {"Chorus",                       15,   21,   1.0f,  1.0f,  0, 0,   0,  0,  0,  0,  0,  1, 0.7f, 6,  0,  1,   0,   50},
+            {"Vibrato",                      8,    0,    1.0f,  1.0f,  0, -30, 0,  0,  0,  0,  6,  1, 5.0f, 6,  0,  1,   1,   100},
+            {"Slapback 110 ms",              110,  0,    1.0f,  1.0f,  0, -30, 0,  0,  0,  0,  6,  0, 1.0f, 0,  0,  1,   1,   30},
+            {"Stereo echo 375 / 500 ms",     375,  500,  1.0f,  1.0f,  0, 0,   55, 55, 40, 40, 0,  0, 1.0f, 0,  0,  1,   0,   30},
+            {"Dark repeats",                 450,  300,  1.0f,  1.0f,  0, 0,   75, 72, 60, 60, 0,  0, 1.0f, 0,  0,  1,   0,   30},
+            {"Rising echo (semitone)",       250,  375,  1.059f,1.0f,  0, 0,   70, 40, 20, 40, 0,  0, 1.0f, 0,  0,  1,   0,   30},
+            {"Octave-up feedback",           60,   90,   2.0f,  1.0f,  0, 0,   60, 0,  30, 0,  0,  0, 1.0f, 0,  0,  1,   0,   35},
+            {"Octave down",                  30,   0,    0.5f,  1.0f,  0, -30, 0,  0,  0,  0,  6,  0, 1.0f, 0,  0,  1,   1,   50},
+            {"Fifth above",                  30,   0,    1.498f,1.0f,  0, -30, 0,  0,  0,  0,  6,  0, 1.0f, 0,  0,  1,   1,   40},
+            {"Fourth and fifth",             30,   45,   1.335f,1.498f,0, 0,   0,  0,  0,  0,  0,  0, 1.0f, 0,  0,  1,   1,   40},
+        };
+        std::vector<kit::Preset> out;
+        for (const Row& r : rows) {
+            kit::Preset p;
+            p.name = r.name;
+            p.values = {r.dA, r.dB, r.pA, r.pB, r.inA, r.inB, r.fbA, r.fbB, r.flA, r.flB, r.out,
+                        r.vco, r.speed, r.depth, r.phA, r.mono, r.mix_out, 0.0f, 0.0f};
+            p.mix = r.mix;
+            out.push_back(std::move(p));
+        }
+        return out;
+    }
+
     void process(const float* const* in, float* out_l, float* out_r, int n) override {
         engine_.process(in[0], in[1], out_l, out_r, n);
     }

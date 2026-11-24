@@ -192,6 +192,40 @@ public:
         return o;
     }
 
+    // The unit has no memories (rotary switches and knobs). These are ours, picked off Table III
+    // (kDecaySec): they set the panel (the first 11 parameters, the overrides off) and the kit's
+    // wet/dry, never the model options. The unit's own direct mix stays at 0 so the kit's Mix blends.
+    std::vector<kit::Preset> presets() const override {
+        struct Row {
+            const char* name;
+            float lf, hf;
+            int room, pre, decay;   // room 1-8, pre delay and decay as switch positions
+            float mix;
+        };
+        static const Row rows[] = {
+            {"Short ambience 0.4 s", 0.6f, 1.0f, 1, 0, 1, 30},
+            {"Small room 0.7 s", 0.8f, 0.7f, 1, 1, 2, 25},
+            {"Drum room 1.0 s", 0.8f, 0.6f, 2, 0, 2, 25},
+            {"Slap and room 1.5 s", 0.9f, 0.7f, 2, 9, 3, 25},
+            {"Vocal space 2.0 s", 0.9f, 0.8f, 3, 4, 3, 25},
+            {"Medium hall 2.5 s", 1.0f, 0.7f, 4, 3, 3, 25},
+            {"Dark chamber 3.0 s", 1.0f, 0.3f, 5, 2, 3, 25},
+            {"Large hall 3.8 s", 0.9f, 0.6f, 5, 5, 4, 25},
+            {"Big space 5.4 s", 1.0f, 0.5f, 6, 6, 5, 25},
+            {"Cathedral 6.5 s", 1.0f, 0.5f, 8, 7, 4, 25},
+            {"Endless 10 s", 1.0f, 0.4f, 8, 0, 7, 35},
+        };
+        std::vector<kit::Preset> out;
+        for (const Row& r : rows) {
+            kit::Preset p;
+            p.name = r.name;
+            p.values = {2.5f, r.lf, r.hf, 0.0f, 1.0f, float(r.room - 1), float(r.pre), float(r.decay), 0.0f, 0.0f, 0.0f};
+            p.mix = r.mix;
+            out.push_back(std::move(p));
+        }
+        return out;
+    }
+
     void process(const float* const* in, float* out_l, float* out_r, int n) override {
         if (!bridge_.ready() || !m_) {
             std::fill(out_l, out_l + n, 0.0f);

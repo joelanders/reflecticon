@@ -231,12 +231,19 @@ void Processor::adoptPanelSettings() {
 }
 
 void Processor::applyPreset(const Preset& p) {
-    for (size_t i = 0; i < p.values.size() && i < type_.info.params.size(); i++) {
-        auto* prm = params.getParameter(type_.info.params[i].id);
+    auto set = [](juce::RangedAudioParameter* prm, float plain) {
         prm->beginChangeGesture();
-        prm->setValueNotifyingHost(prm->convertTo0to1(p.values[i]));
+        prm->setValueNotifyingHost(prm->convertTo0to1(plain));
         prm->endChangeGesture();
+    };
+    for (size_t i = 0; i < p.values.size() && i < type_.info.params.size(); i++) {
+        const auto& info = type_.info.params[i];
+        if (info.tempo_sync && syncChoice(i) > 0)   // the preset's time, not the tempo's
+            if (auto* sp = params.getParameter(syncId(info))) set(sp, 0.0f);
+        set(params.getParameter(info.id), p.values[i]);
     }
+    if (p.mix >= 0)
+        if (auto* m = params.getParameter("mix")) set(m, p.mix);
 }
 
 void Processor::prepareToPlay(double sampleRate, int samplesPerBlock) {
