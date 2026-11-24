@@ -294,7 +294,7 @@ kit::Info make_info() {
         {"trigger", "Trigger", K::Bool, 0, 1, 0, {}, ""},
         {"ram", "RAM per channel", K::Choice, 0, 3, 3, {"4K words", "16K words", "32K words", "64K words"}, ""},
         {"boards", "Pitch boards", K::Choice, 0, 1, 1, {"one", "two"}, ""},
-        {"analog", "Analog stages", K::Bool, 0, 1, 0, {}, ""},
+        {"analog", "Analog stages", K::Bool, 0, 1, 1, {}, ""},   // on: the tone is in these (2026-11-24)
         {"smooth", "Smooth pitch (later units)", K::Bool, 0, 1, 0, {}, ""},
     };
     kit::tempo_sync(i.params, {"delayA", "delayB", "vcoSpeed"});
@@ -352,7 +352,7 @@ kit::Info make_info() {
         {"boards",
          "One or two pitch-change boards fitted. With one, channel B has no pitch change."},
         {"analog",
-         "Models the input filters, the DAC's track-and-hold and the output filters from the schematics. Off: the digital path alone."},
+         "Models the input filters, the DAC's track-and-hold and the output filters from the schematics (on by default). Off: the digital path alone."},
         {"smooth",
          "Interpolates the pitch changer's reads: smoother pitch shifts, a guess at what later units did."},
     });
