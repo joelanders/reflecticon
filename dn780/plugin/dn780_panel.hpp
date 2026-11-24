@@ -239,13 +239,13 @@ inline kit::PanelLayout dn780_layout() {
     }
 
     // MEMORY: the keypad
-    const float cx[3] = {385.6f, 402.5f, 419.0f}, ry[4] = {25.05f, 37.8f, 50.55f, 63.55f};
+    const float cx[3] = {385.7f, 402.4f, 419.1f}, ry[4] = {25.05f, 37.88f, 50.72f, 63.55f};
     struct P {
         int id;
         const char *legend, *hot;
     } pad[12] = {{Key7, "7", "7"}, {Key8, "8", "8"},   {Key9, "9", "9"}, {Key4, "4", "4"}, {Key5, "5", "5"},     {Key6, "6", "6"},
                  {Key1, "1", "1"}, {Key2, "2", "2"},   {Key3, "3", "3"}, {KeySto, "STO", "s"}, {Key0, "0", "0"}, {KeySeq, "SEQ", "q"}};
-    for (int i = 0; i < 12; i++) key(cx[i % 3], ry[i / 3], pad[i].id, pad[i].legend, pad[i].hot, 16.4f, 8.2f);
+    for (int i = 0; i < 12; i++) key(cx[i % 3], ry[i / 3], pad[i].id, pad[i].legend, pad[i].hot, 15.4f, 8.2f);
 
     // the power switch (drawn only)
     window(436.7f, 58.4f, 451.6f, 64.4f, 0xffd82a20);
