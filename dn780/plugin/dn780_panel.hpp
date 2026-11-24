@@ -256,8 +256,9 @@ inline kit::PanelLayout dn780_layout() {
     const uint32_t card = 0xff3a342c;
     // two printed lines in the same ink: the outer one round ~6 mm corners, the inner ~1.9 mm inside it
     // (~4 mm corners), both measured on the full-panel photo
+    constexpr float kCardGap = 1.9f;   // the same on all four sides, concentric corners
     rframe(453.1f, 13.3f, 480.9f, 72.7f, 6.0f, {}, card);
-    rframe(455.05f, 15.1f, 478.95f, 70.9f, 4.1f, {}, card);
+    rframe(453.1f + kCardGap, 13.3f + kCardGap, 480.9f - kCardGap, 72.7f - kCardGap, 6.0f - kCardGap, {}, card);
     hline(460.1f, 473.9f, 21.75f, card);   // SOFTWARE and NOTE are underlined
     text(467.0f, 17.4f, "SERIES 2.0", 1.9f, E::Centre, card);
     text(467.0f, 20.3f, "SOFTWARE", 1.9f, E::Centre, card);
