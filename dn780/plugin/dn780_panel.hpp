@@ -64,7 +64,7 @@ inline kit::PanelLayout dn780_layout() {
         add(e);
     };
     char buf[256];
-    constexpr float lw = 0.45f;   // printed line weight
+    constexpr float lw = 0.35f;   // printed line weight (the photos: ~2 px at 5.6 px/mm)
     auto hline = [&](float x0, float x1, float y, uint32_t col = 0) {
         std::snprintf(buf, sizeof buf, "M%.2f %.2f H%.2f V%.2f H%.2f Z", x0, y - lw / 2, x1, y + lw / 2, x0);
         path(buf, x0, y - lw / 2, x1, y + lw / 2, col);
@@ -132,12 +132,14 @@ inline kit::PanelLayout dn780_layout() {
     // the model legend (the maker's name and logo to its left are left off)
     text(231.8f, 8.0f, "DN 780   DIGITAL REVERBERATOR / PROCESSOR", 2.6f);
 
-    // printed frames: the outer one, AUDIO, the display and keys, MEMORY
-    rframe(39.5f, 12.7f, 443.2f, 75.1f, 3.5f, {});
-    rframe(48.8f, 16.2f, 102.4f, 72.0f, 3.5f, {52.3f, 68.6f, 81.4f, 98.9f});
+    // printed frames: the outer one, AUDIO, the display and keys, MEMORY; all four corners ~4.1 mm in
+    // both photos (fitted on the diagonals)
+    constexpr float kR = 4.1f;
+    rframe(39.5f, 12.7f, 443.2f, 75.1f, kR, {});
+    rframe(48.8f, 16.2f, 102.4f, 72.0f, kR, {52.9f, 68.6f, 81.4f, 98.3f});
     text(75.0f, 72.0f, "AUDIO", 2.1f);
-    rframe(105.3f, 16.0f, 370.9f, 71.8f, 4.5f, {109.8f, 145.3f, 361.9f, 366.4f});
-    rframe(373.7f, 15.9f, 430.8f, 71.4f, 4.5f, {378.2f, 394.4f, 410.4f, 426.3f});
+    rframe(105.3f, 16.0f, 370.9f, 71.8f, kR, {109.4f, 145.3f, 361.9f, 366.8f});
+    rframe(373.7f, 15.9f, 430.8f, 71.4f, kR, {377.8f, 394.4f, 410.4f, 426.7f});
     text(402.4f, 71.4f, "MEMORY", 2.1f);
     // the brackets under the keys
     auto bracket = [&](float x0, float x1, float t0, float t1, const char* caption, float cx) {
