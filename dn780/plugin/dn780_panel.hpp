@@ -254,8 +254,11 @@ inline kit::PanelLayout dn780_layout() {
 
     // the software card
     const uint32_t card = 0xff3a342c;
-    rframe(453.3f, 14.1f, 480.7f, 71.5f, 3.5f, {}, card);
-    rframe(455.1f, 15.2f, 478.9f, 70.8f, 3.0f, {}, card);
+    // a separate plate: its edge (round ~6 mm corners), then the printed line ~1.9 mm inside it
+    // (~4 mm corners), both measured on the full-panel photo
+    rframe(453.1f, 13.3f, 480.9f, 72.7f, 6.0f, {}, 0xff8c8c88);
+    rframe(455.05f, 15.1f, 478.95f, 70.9f, 4.1f, {}, card);
+    hline(460.1f, 473.9f, 21.75f, card);   // SOFTWARE and NOTE are underlined
     text(467.0f, 17.4f, "SERIES 2.0", 1.9f, E::Centre, card);
     text(467.0f, 20.3f, "SOFTWARE", 1.9f, E::Centre, card);
     const char* lines[] = {"01-05 Halls",     "06-10 Plates",    "11-15 Chambers", "16-20 Rooms",          "21-25 Spare",
@@ -264,6 +267,7 @@ inline kit::PanelLayout dn780_layout() {
                            "34 \xe2\x80\x94 S.O.S.*", "35 \xe2\x80\x94 Infinite Room*", "36-39 Spare", "40-89 User Mem."};
     for (int i = 0; i < 17; i++) text(456.1f, 23.3f + 2.27f * float(i), lines[i], 1.5f, E::Left, card);
     text(467.0f, 62.3f, "NOTE", 1.6f, E::Centre, card);
+    hline(464.0f, 470.0f, 63.45f, card);
     text(456.1f, 65.1f, "(1) \xe2\x80\x94 *Use 'Level'", 1.5f, E::Left, card);
     text(456.1f, 67.3f, "(2) \xe2\x80\x94 Press 0,0 For", 1.5f, E::Left, card);
     text(462.6f, 69.4f, "Mem. No.", 1.5f, E::Left, card);
