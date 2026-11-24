@@ -76,6 +76,13 @@ int main(int argc, char** argv) {
         run(0.5);
     }
     run(wait);
+    if (!presses.isEmpty() && wait > 0) {   // panels that time keys by the clock (a held reverb clear)
+        juce::Thread::sleep(int(wait * 1000));
+        proc->host().refresh_panel();
+        proc->adoptPanelSettings();
+        proc->host().sync();
+        run(0.1);
+    }
     proc->host().refresh_panel();
     proc->host().refresh_readouts();
     std::unique_ptr<juce::AudioProcessorEditor> ed(proc->createEditor());

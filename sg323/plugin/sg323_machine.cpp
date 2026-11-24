@@ -1,11 +1,14 @@
 #include "sg323_machine.hpp"
+#include "sg323_panel.hpp"
 #include "../core/sg323.hpp"
 #include "../../shared/core/mailbox.hpp"
 #include "../../shared/core/rate_bridge.hpp"
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <map>
 #include <memory>
 
 namespace sg323plug {
@@ -23,13 +26,11 @@ constexpr double kInputTop = 2.0;
 // Decay time in seconds by room and knob position: the owner's manual's Table III, which the unit's
 // decay display (the 0809 table) reproduces exactly.
 //
-// Hardware panel hook (Info::panel is empty for now): the 0809 PROM looks like the display's
-// 7-segment table (pages: room digit, decay units/tenths by room x decay, predelay digits, override
-// bits, an 8-step peak thermometer; audit note 2026-11-18-0131). Once display sheets 4 and 10 confirm
-// its addressing: add 0809 as an optional ROM, return its bytes through Machine::panel() as the
-// digits (and the override LEDs and peak meter as leds), and draw the panel in a layout. The knobs
-// and override switches are parameters already, so a layout can bind them (PanelElement::param)
-// with no new machine code; Input Mute is missing from the core (sheet 8, U2 4053).
+// The hardware panel (sg323_panel.hpp) computes its displays and level meter here. On the unit the
+// 0809 PROM looks like the display's 7-segment table (pages: room digit, decay units/tenths by
+// room x decay, predelay digits, override bits, an 8-step peak thermometer; audit note
+// 2026-11-18-0131); once display sheets 4 and 10 confirm its addressing it could drive them instead,
+// as an optional ROM.
 const double kDecaySec[8][8] = {{0, .4, .7, 1.0, 1.3, 1.6, 1.8, 2.0}, {0, .5, 1.0, 1.5, 2.0, 2.4, 2.7, 3.0},
                                 {0, .8, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0}, {0, 1.0, 1.8, 2.5, 3.2, 3.8, 4.4, 5.0},
                                 {0, 1.2, 2.2, 3.0, 3.8, 4.6, 5.4, 6.0}, {0, 1.5, 2.5, 3.5, 4.5, 5.4, 6.2, 7.0},
@@ -92,6 +93,70 @@ public:
         }
         levels_.post(c);
         ctl_ = c;
+        for (auto it = pending_.begin(); it != pending_.end();)   // the host has taken a panel setting
+            it = std::abs(v_[size_t(it->first)] - it->second) < 1e-4f ? pending_.erase(it) : std::next(it);
+    }
+
+    // ---- hardware panel (sg323_panel.hpp): the knobs are parameters; the keys set parameters ----
+    void panel_key(int id, bool down) override {
+        if (v_.size() < NumParams) return;
+        const auto now = std::chrono::steady_clock::now();
+        if (down && id == KeyInputMute) set_from_panel(InputMute, cur(InputMute) > 0.5f ? 0.0f : 1.0f);
+        if (down && id == KeyDryOnly) set_from_panel(DryOnly, cur(DryOnly) > 0.5f ? 0.0f : 1.0f);
+        if (id == KeyReverbClear) {   // clears while held, at least half a second
+            if (down) {
+                clear_down_ = now;
+                clear_release_ = {};
+                set_from_panel(ReverbClear, 1.0f);
+            } else if (now - clear_down_ >= kClearHold) {
+                set_from_panel(ReverbClear, 0.0f);
+            } else {
+                clear_release_ = clear_down_ + kClearHold;
+            }
+        }
+    }
+
+    kit::PanelState panel() const override {
+        kit::PanelState s;
+        if (v_.size() < NumParams || !m_) return s;
+        const auto now = std::chrono::steady_clock::now();
+        if (clear_release_ != Clock::time_point{} && now >= clear_release_) {
+            clear_release_ = {};
+            set_from_panel(ReverbClear, 0.0f);
+        }
+        s.valid = true;
+        const sg323::Controls& c = ctl_;
+        // the displays: room, pre delay in ms, decay in seconds (one decimal)
+        int pdc[16];
+        proms_.predelay_codes(pdc);
+        const int ms = int(std::lround(proms_.predelay_ms(pdc[std::clamp(c.predelay, 0, 15)])));
+        const double sec = c.decay == 0 ? 0.0 : kDecaySec[c.room - 1][c.decay];
+        const int tenths = int(std::lround(sec * 10));
+        s.digits.assign(7, 0);
+        s.digits[0] = seg(c.room);
+        s.digits[1] = ms >= 100 ? seg(ms / 100) : 0;
+        s.digits[2] = ms >= 10 ? seg(ms / 10 % 10) : 0;
+        s.digits[3] = seg(ms % 10);
+        s.digits[4] = tenths >= 100 ? seg(tenths / 100) : 0;
+        s.digits[5] = uint8_t(seg(tenths / 10 % 10) | 0x80);
+        s.digits[6] = seg(tenths % 10);
+        // the level meter: the input's peak after the input knob, falling 20 dB/s
+        const float peak = meter_.exchange(0.0f, std::memory_order_relaxed);
+        const float db = peak > 0 ? 20.0f * std::log10(peak / float(kFullScale)) : -120.0f;
+        const float dt = meter_at_ == Clock::time_point{} ? 0.0f : std::chrono::duration<float>(now - meter_at_).count();
+        meter_at_ = now;
+        meter_db_ = std::max(db, meter_db_ - 20.0f * dt);
+        s.leds.assign(NumSgLeds, 0);
+        for (int i = 0; i < NumLevelLeds; i++) s.leds[size_t(LedLevel0 + i)] = meter_db_ >= kLevelDb[i] ? 255 : 0;
+        s.leds[LedMute] = cur(InputMute) > 0.5f ? 255 : 0;   // what the keys last set, adopted or not
+        s.leds[LedDry] = cur(DryOnly) > 0.5f ? 255 : 0;
+        s.leds[LedClear] = cur(ReverbClear) > 0.5f ? 255 : 0;
+        if (!pending_.empty()) {
+            s.adopt.assign(NumParams, NAN);
+            for (auto& [i, x] : pending_) s.adopt[size_t(i)] = x;
+        }
+        s.adopt_serial = adopt_serial_;
+        return s;
     }
 
     kit::Readouts readouts() const override {
@@ -136,7 +201,11 @@ public:
         if (coefs_.take(coefs_tmp_)) m_->set_coefs(coefs_tmp_);
         if (taps_.take(taps_tmp_)) m_->set_taps(taps_tmp_);
         sg323::Controls lv;
-        if (levels_.take(lv)) m_->set_levels(lv);
+        const bool have_lv = levels_.take(lv);
+        if (have_lv) m_->set_levels(lv);
+        if (have_lv) gain_ = float(lv.input_gain);
+        float peak = 0;
+        for (int i = 0; i < n; i++) peak = std::max({peak, std::fabs(in[0][i]), std::fabs(in[1][i])});
         sg323::Machine* m = m_.get();
         bridge_.process(in, out_l, out_r, n, [m](const float* const* x, float* l, float* r, int count) {
             for (int i = 0; i < count; i++) {
@@ -147,6 +216,9 @@ public:
             }
         });
         level_.store(m->level_code(), std::memory_order_relaxed);
+        peak *= gain_;   // the meter's peak since the panel last read it
+        float was = meter_.load(std::memory_order_relaxed);
+        while (peak > was && !meter_.compare_exchange_weak(was, peak, std::memory_order_relaxed)) {}
     }
 
 private:
@@ -185,6 +257,33 @@ private:
     sg323::Controls ctl_;      // control thread
     std::vector<float> v_;
     bool coefs_sent_ = false, taps_sent_ = false;
+
+    // the panel (control thread; panel() is const but runs there too)
+    using Clock = std::chrono::steady_clock;
+    static constexpr auto kClearHold = std::chrono::milliseconds(500);
+    static constexpr double kFullScale = 0.5;   // the input stage's value at converter full scale (kInputTop)
+    static uint8_t seg(int d) {
+        static const uint8_t k[10] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F};
+        return k[std::clamp(d, 0, 9)];
+    }
+    // a setting made on the panel, offered to the host (PanelState::adopt) until it shows in v_
+    void set_from_panel(int param, float value) const {
+        pending_[param] = value;
+        adopt_serial_++;
+    }
+    // a key's setting: what the panel last set if the host has not taken it yet
+    float cur(int param) const {
+        auto it = pending_.find(param);
+        return it != pending_.end() ? it->second : v_[size_t(param)];
+    }
+    mutable std::map<int, float> pending_;
+    mutable uint32_t adopt_serial_ = 0;
+    Clock::time_point clear_down_;
+    mutable Clock::time_point clear_release_;
+    mutable Clock::time_point meter_at_;
+    mutable float meter_db_ = -120.0f;
+    mutable std::atomic<float> meter_{0.0f};   // audio thread: the input peak since the panel read it
+    float gain_ = 0.5f;                // audio thread: the input knob's gain
 };
 
 std::unique_ptr<kit::Machine> boot(const kit::RomSet& roms, const std::string&, std::string* err) {
@@ -229,6 +328,7 @@ kit::Info make_info() {
         {"unit", "Unit", K::Choice, 0, 1, 0, {"design values", "ravettel's unit"}, ""},
     };
     kit::momentary(i.params, {{"reverbClear", "Clear"}});
+    i.panel = sg323_layout();
     kit::describe(i.params, {
         {"inputLevel",
          "Input level into the reverb. As on the hardware, it also sets the modulation rate."},
