@@ -97,7 +97,7 @@ Editor::Editor(Processor& p) : AudioProcessorEditor(p), proc_(p) {
         if (auto* tc = dynamic_cast<juce::SettableTooltipClient*>(r->control())) tc->setTooltip(prm.help);
         rows_.push_back(std::move(r));
     }
-    {   // the kit's wet/dry, after the machine's own controls
+    if (!info.own_mix) {   // the kit's wet/dry, after the machine's own controls
         auto r = std::make_unique<Row>();
         r->name.setText("Mix", juce::dontSendNotification);
         r->name.setColour(juce::Label::textColourId, kText);

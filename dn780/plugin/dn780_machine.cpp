@@ -137,7 +137,11 @@ public:
         std::string size = trim(digits({11, 8}));
         o.param[Program] = kPrograms[prog_ - kFirstProgram];
         o.param[Predelay] = pre + (pre.find('.') != std::string::npos ? " s" : " ms");
-        o.param[Pattern] = trim(digits({12}));
+        {   // what the digit means depends on the program (the manual, pp. 19, 23-27)
+            const std::string pat = trim(digits({12}));
+            const char* what = prog_ == 0x12 ? " of 5 (voices)" : prog_ == 0x13 ? " of 9 (repeats)" : " of 9 (density)";
+            o.param[Pattern] = pat.empty() ? pat : pat + what;
+        }
         o.param[Level] = trim(digits({0}));
         o.param[LF] = trim(digits({2, 5}));
         o.param[HF] = trim(digits({6, 7}));
@@ -373,9 +377,9 @@ kit::Info make_info() {
         {"predelay",
          "Delay before the reverb starts, on the unit's own scale."},
         {"pattern",
-         "The early-reflection pattern."},
+         "The density of the early reflections, 0 (sparse, grainy) to 9 (dense), as the unit's manual describes it. On ADT it picks the number and spacing of the voices (1-5); on Multitap Echo, of the repeats (1-9)."},
         {"level",
-         "The early-reflection level."},
+         "The early reflections' level, which the manual calls depth: 0 sounds distant, 9 close."},
         {"lf",
          "Low-frequency decay, on the unit's own scale."},
         {"hf",

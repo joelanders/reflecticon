@@ -33,26 +33,27 @@ public:
         r = r.withSizeKeepingCentre(d, d);
         const auto c = r.getCentre();
         const float ang = a0 + pos * (a1 - a0);
-        if (const int capArgb = int(sl.getProperties()["cap"]); capArgb != 0) {   // a coloured cap on a black skirt
+        if (const int capArgb = int(sl.getProperties()["cap"]); capArgb != 0) {   // a coloured cap on a black body
+            // Matte, as the photos show it: a flat coloured disc in a finely fluted black body, lit
+            // softly from above; no sheen, no deep shading (which read as glossy plastic).
             const auto col = juce::Colour(uint32_t(capArgb));
-            g.setColour(juce::Colours::black.withAlpha(0.5f));   // shadow
-            g.fillEllipse(r.translated(0.0f, d * 0.05f));
-            juce::ColourGradient skirt(juce::Colour(0xff3a3a3a), c.x - d * 0.4f, c.y - d * 0.4f, juce::Colour(0xff050505), c.x + d * 0.4f,
-                                       c.y + d * 0.45f, true);
-            g.setGradientFill(skirt);
+            g.setColour(juce::Colours::black.withAlpha(0.35f));   // shadow
+            g.fillEllipse(r.translated(0.0f, d * 0.04f));
+            juce::ColourGradient body(juce::Colour(0xff262626), c.x, r.getY(), juce::Colour(0xff0c0c0c), c.x, r.getBottom(), false);
+            g.setGradientFill(body);
             g.fillEllipse(r);
-            g.setColour(juce::Colours::black.withAlpha(0.6f));   // knurling
-            for (int i = 0; i < 40; i++) {
-                const float a = float(i) * juce::MathConstants<float>::twoPi / 40.0f + ang;
+            g.setColour(juce::Colour(0xff3a3a3a).withAlpha(0.5f));   // flutes, fixed to the body
+            for (int i = 0; i < 48; i++) {
+                const float a = float(i) * juce::MathConstants<float>::twoPi / 48.0f + ang;
                 const float s = std::sin(a), co = -std::cos(a);
-                g.drawLine(c.x + s * d * 0.42f, c.y + co * d * 0.42f, c.x + s * d * 0.49f, c.y + co * d * 0.49f, std::max(0.6f, d * 0.015f));
+                g.drawLine(c.x + s * d * 0.45f, c.y + co * d * 0.45f, c.x + s * d * 0.49f, c.y + co * d * 0.49f, std::max(0.5f, d * 0.01f));
             }
-            auto cap = r.reduced(d * 0.13f);
-            juce::ColourGradient cg(col.brighter(0.3f), cap.getX(), cap.getY(), col.darker(0.45f), cap.getRight(), cap.getBottom(), false);
+            auto cap = r.reduced(d * 0.12f);
+            juce::ColourGradient cg(col.brighter(0.06f), cap.getX(), cap.getY(), col.darker(0.12f), cap.getX(), cap.getBottom(), false);
             g.setGradientFill(cg);
             g.fillEllipse(cap);
-            g.setColour(juce::Colours::white.withAlpha(0.12f));   // the top's sheen
-            g.fillEllipse(cap.reduced(cap.getWidth() * 0.2f).translated(-cap.getWidth() * 0.07f, -cap.getWidth() * 0.09f));
+            g.setColour(juce::Colours::black.withAlpha(0.35f));   // the cap's edge
+            g.drawEllipse(cap, std::max(0.5f, d * 0.012f));
             g.setColour(col.getPerceivedBrightness() > 0.6f ? juce::Colour(0xff2a2a2a) : juce::Colour(0xfff4f4f0));
             const float s = std::sin(ang), co = -std::cos(ang);
             g.drawLine(c.x + s * d * 0.05f, c.y + co * d * 0.05f, c.x + s * d * 0.36f, c.y + co * d * 0.36f, std::max(1.0f, d * 0.045f));
@@ -141,7 +142,8 @@ public:
         }
         if (!e_.text.empty()) {
             g.setColour(argb(e_.colour, 0xff151515));   // colour: the legend's (white on dark caps)
-            g.setFont(v_.legendFont(e_.h * 0.35f, false));
+            // the keypad's printed caps carry big legends (the RMX16 photos: ~60 % of the cap)
+            g.setFont(v_.legendFont(e_.h * (e_.style == E::KeypadCream ? 0.58f : 0.35f), false));
             g.drawText(juce::String::fromUTF8(e_.text.c_str()), r, juce::Justification::centred, false);
         }
         if (led_) {
@@ -439,9 +441,9 @@ void PanelView::paint(juce::Graphics& g) {
             }
             break;
         case E::Frame:
-            if (e.style == 1) {
+            if (e.style == 1) {   // a filled plate; size = its corner radius in mm (default 0.5)
                 g.setColour(argb(e.colour, 0xffb0b0b0));
-                g.fillRoundedRectangle(r, 0.5f * s);
+                g.fillRoundedRectangle(r, (e.size > 0 ? e.size : 0.5f) * s);
             } else if (e.text.empty()) {
                 g.setColour(ink.withAlpha(0.9f));
                 g.drawRoundedRectangle(r, 0.4f * s, std::max(1.0f, 0.32f * s));
@@ -480,8 +482,10 @@ void PanelView::paint(juce::Graphics& g) {
             juce::ColourGradient wg(tint, r.getX(), r.getY(), tint.darker(0.55f), r.getX(), r.getBottom(), false);
             g.setGradientFill(wg);
             g.fillRoundedRectangle(r, rad);
-            g.setColour(juce::Colours::white.withAlpha(0.035f));   // the filter's sheen
-            g.fillRoundedRectangle(r.withHeight(r.getHeight() * 0.35f).reduced(rad * 0.6f, 0.0f), rad * 0.3f);
+            if (rad == 0.0f) {   // the filter's sheen (a smoked pill window has none in the photos)
+                g.setColour(juce::Colours::white.withAlpha(0.035f));
+                g.fillRoundedRectangle(r.withHeight(r.getHeight() * 0.35f), 0.0f);
+            }
             break;
         }
         case E::Text: {

@@ -174,8 +174,9 @@ public:
         o.param[HfDecay] = fmt("cut > %.1f kHz", 1.0 / (2 * M_PI * (3300.0 + c.hf_eq * 50000.0) * 1e-9) / 1000.0);
         o.param[Input] = fmt("%.1f", v_[Input]);
         o.param[InputMute] = c.input_mute ? "muted" : "off";
-        o.param[ReverbMix] = fmt("%.2f", c.reverb_mix);
-        o.param[DirectMix] = c.dry_only ? std::string("1.00 (dry only)") : fmt("%.2f", c.direct_mix);
+        // as the panel marks the knobs, 0-10
+        o.param[ReverbMix] = fmt("%.1f", 10.0 * c.reverb_mix);
+        o.param[DirectMix] = c.dry_only ? std::string("10 (dry only)") : fmt("%.1f", 10.0 * c.direct_mix);
         o.param[Modulation] = c.modulation ? "on" : "off";
         o.param[Hiss] = c.hiss_nv > 0 ? "on" : "off";
         o.param[DryOnly] = c.dry_only ? "dry signal only" : "off";
@@ -193,14 +194,16 @@ public:
     }
 
     // The unit has no memories (rotary switches and knobs). These are ours, picked off Table III
-    // (kDecaySec): they set the panel (the first 11 parameters, the overrides off) and the kit's
-    // wet/dry, never the model options. The unit's own direct mix stays at 0 so the kit's Mix blends.
+    // (kDecaySec): they set the panel (the first 11 parameters, the overrides off), never the model
+    // options. The blend is the unit's own direct and reverb knobs (there is no kit Mix here): direct
+    // full, which at the default input (2.5) is the dry signal at about -6 dB (0.5 x G_DIR x V_FS/2 over
+    // G_REV x WET_V = 0.49), and reverb = 0.49 x wet / (100 - wet) for the wet share named in the row.
     std::vector<kit::Preset> presets() const override {
         struct Row {
             const char* name;
             float lf, hf;
             int room, pre, decay;   // room 1-8, pre delay and decay as switch positions
-            float mix;
+            float mix;   // the wet share, %
         };
         static const Row rows[] = {
             {"Short ambience 0.4 s", 0.6f, 1.0f, 1, 0, 1, 30},
@@ -219,8 +222,8 @@ public:
         for (const Row& r : rows) {
             kit::Preset p;
             p.name = r.name;
-            p.values = {2.5f, r.lf, r.hf, 0.0f, 1.0f, float(r.room - 1), float(r.pre), float(r.decay), 0.0f, 0.0f, 0.0f};
-            p.mix = r.mix;
+            const float rev = 0.49f * r.mix / (100.0f - r.mix);
+            p.values = {2.5f, r.lf, r.hf, 1.0f, rev, float(r.room - 1), float(r.pre), float(r.decay), 0.0f, 0.0f, 0.0f};
             out.push_back(std::move(p));
         }
         return out;
@@ -338,6 +341,7 @@ kit::Info make_info() {
     i.rom_env = "SG323_ROMPATH";
     i.inputs = 2;
     i.tail_seconds = 10;
+    i.own_mix = true;   // direct and reverb are the panel's knobs: they are the wet/dry
     using K = kit::Param;
     std::vector<std::string> rooms, decays, pre;
     for (int r = 1; r <= 8; r++) rooms.push_back("Room " + std::to_string(r));
@@ -371,9 +375,9 @@ kit::Info make_info() {
         {"hfDecay",
          "High-frequency decay: lower values darken the tail."},
         {"directMix",
-         "The dry signal's level in the unit's own output mix."},
+         "The dry signal's level in the unit's own output mix (the panel's direct knob, 0-10). With Reverb mix it is this plugin's wet/dry: 0 for the reverb alone, as on an aux send."},
         {"reverbMix",
-         "The reverb's level in the unit's own output mix."},
+         "The reverb's level in the unit's own output mix (the panel's reverb knob, 0-10)."},
         {"room",
          "The room program: the PROMs' delay patterns."},
         {"predelay",

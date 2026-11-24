@@ -55,7 +55,7 @@ inline kit::PanelLayout sg323_layout() {
     auto frame = [&](float x0, float y0, float x1, float y1, const char* caption) {
         E e;
         e.kind = E::Frame;
-        e.x = x0, e.y = y0, e.w = x1 - x0, e.h = y1 - y0, e.text = caption, e.size = 2.3f, e.colour = 0xffa8aaa6;
+        e.x = x0, e.y = y0, e.w = x1 - x0, e.h = y1 - y0, e.text = caption, e.size = 2.3f, e.colour = 0xff7e807c;   // dim grey in the photos
         add(e);
     };
     auto led = [&](float cx, float cy, int id, float d = 1.8f) {
@@ -133,34 +133,36 @@ inline kit::PanelLayout sg323_layout() {
         add(b);
     }
 
-    // knobs (blue: level, white: decay EQ) and the red rotary switches
+    // knobs (blue: level, white: decay EQ) and the red rotary switches, at their shafts: the caps in the
+    // photo sit off the shafts (the camera's angle on tall knobs), so the x is where each knob's label
+    // and its 0/10 (min/max, -/+) pair centre, which agree to 0.4 mm (re-measured 2026-11-24)
     const uint32_t blue = 0xff2f6fd8, white = 0xffe2e0d8, red = 0xffe8241c;
-    text(47.6f, 44.6f, "input");
-    pot(38.2f, 61.2f, 21.0f, "inputLevel", blue);
+    text(47.8f, 44.6f, "input");
+    pot(47.8f, 61.2f, 21.0f, "inputLevel", blue);
     text(39.3f, 74.7f, "0", 2.2f), text(55.3f, 74.7f, "10", 2.2f);
     text(86.3f, 44.6f, "LF decay");
-    pot(78.7f, 61.2f, 21.0f, "lfEq", white);
+    pot(85.9f, 61.2f, 21.0f, "lfEq", white);
     text(76.9f, 74.7f, "min", 2.2f), text(94.0f, 74.7f, "max", 2.2f);
-    text(121.3f, 44.6f, "HF decay");
-    pot(119.1f, 61.2f, 21.0f, "hfDecay", white);
+    text(124.2f, 44.6f, "HF decay");
+    pot(124.2f, 61.2f, 21.0f, "hfDecay", white);
     text(115.8f, 74.7f, "min", 2.2f), text(132.2f, 74.7f, "max", 2.2f);
-    text(162.8f, 44.6f, "direct");
-    pot(158.4f, 60.5f, 21.0f, "directMix", blue);
+    text(162.6f, 44.6f, "direct");
+    pot(162.6f, 61.2f, 21.0f, "directMix", blue);
     text(154.1f, 74.7f, "0", 2.2f), text(170.9f, 74.7f, "10", 2.2f);
-    text(182.5f, 59.0f, "mix");
-    text(202.6f, 44.6f, "reverb");
-    pot(198.9f, 60.5f, 21.0f, "reverbMix", blue);
+    text(181.9f, 59.0f, "mix");
+    text(201.4f, 44.6f, "reverb");
+    pot(201.2f, 61.2f, 21.0f, "reverbMix", blue);
     text(193.0f, 74.7f, "0", 2.2f), text(208.7f, 74.7f, "10", 2.2f);
 
     text(246.3f, 44.6f, "room");
-    pot(246.3f, 64.0f, 18.5f, "room", red);
+    pot(246.5f, 63.4f, 18.5f, "room", red);
     text(234.9f, 74.7f, "-", 2.4f), text(258.3f, 74.7f, "+", 2.4f);
-    text(294.4f, 44.6f, "pre delay");
-    pot(296.5f, 63.4f, 18.5f, "predelay", red);
+    text(294.2f, 44.6f, "pre delay");
+    pot(294.0f, 63.4f, 18.5f, "predelay", red);
     text(282.6f, 74.7f, "-", 2.4f), text(305.3f, 74.7f, "+", 2.4f);
-    text(345.7f, 44.6f, "decay");
-    text(345.7f, 48.5f, "time");
-    pot(347.0f, 63.4f, 18.5f, "decay", red);
+    text(342.4f, 44.6f, "decay");
+    text(342.4f, 48.5f, "time");
+    pot(342.3f, 63.4f, 18.5f, "decay", red);
     text(330.6f, 74.7f, "-", 2.4f), text(354.2f, 74.7f, "+", 2.4f);
 
     // the override keys and power

@@ -156,15 +156,18 @@ inline kit::PanelLayout rmx16_layout() {
         E b;
         b.kind = E::Frame;
         b.style = 1;
-        b.colour = 0xff0c0c0c;
+        b.colour = 0xff1a1a1a;   // the rubber bezel: dark grey, round corners
+        b.size = 3.0f;
         b.x = 364.0f, b.y = 7.0f, b.w = 59.6f, b.h = 66.0f;
         add(b);
     }
-    const float kx[4] = {374.0f, 388.5f, 401.9f, 414.8f}, ky[4] = {21.0f, 34.1f, 47.6f, 60.4f};
+    // the AMS keypad (the same part as the DMX's), measured on retrogear-2952 and the DMX's 2943:
+    // a 12.8 mm pitch both ways, 8.5 x 6.6 mm caps
+    const float kx[4] = {374.0f, 386.8f, 399.6f, 412.4f}, ky[4] = {21.5f, 34.3f, 47.1f, 59.9f};
     const char* legend[4][4] = {{"1", "2", "3", "A"}, {"4", "5", "6", "B"}, {"7", "8", "9", "C"}, {"*", "0", "#", "D"}};
     const char* hot[4][4] = {{"1", "2", "3", "a"}, {"4", "5", "6", "b"}, {"7", "8", "9", "c"}, {"*.", "0", "#\r", "d"}};
     for (int r = 0; r < 4; r++)
-        for (int c = 0; c < 4; c++) key(kx[c], ky[r], 9.6f, 8.0f, 100 + 10 * c + (r + 1), legend[r][c], E::KeypadCream, hot[r][c]);
+        for (int c = 0; c < 4; c++) key(kx[c], ky[r], 8.5f, 6.6f, 100 + 10 * c + (r + 1), legend[r][c], E::KeypadCream, hot[r][c]);
 
     // power
     frame(431.3f, 2.6f, 452.8f, 78.8f);

@@ -131,6 +131,7 @@ struct Info {
     PanelLayout panel;         // the front panel for hardware mode; no elements = easy mode only
     std::vector<std::string> groups;   // the editor's boxes in order (Param::group), two to a row
     std::string mix_group;             // the box for the kit's Mix control, if any
+    bool own_mix = false;   // the unit mixes direct and effect itself (its own knobs): no kit Mix, one wet/dry
 };
 
 struct MachineType {
