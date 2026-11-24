@@ -254,9 +254,9 @@ inline kit::PanelLayout dn780_layout() {
 
     // the software card
     const uint32_t card = 0xff3a342c;
-    // a separate plate: its edge (round ~6 mm corners), then the printed line ~1.9 mm inside it
+    // two printed lines in the same ink: the outer one round ~6 mm corners, the inner ~1.9 mm inside it
     // (~4 mm corners), both measured on the full-panel photo
-    rframe(453.1f, 13.3f, 480.9f, 72.7f, 6.0f, {}, 0xff8c8c88);
+    rframe(453.1f, 13.3f, 480.9f, 72.7f, 6.0f, {}, card);
     rframe(455.05f, 15.1f, 478.95f, 70.9f, 4.1f, {}, card);
     hline(460.1f, 473.9f, 21.75f, card);   // SOFTWARE and NOTE are underlined
     text(467.0f, 17.4f, "SERIES 2.0", 1.9f, E::Centre, card);
