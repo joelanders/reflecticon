@@ -124,6 +124,7 @@ inline kit::PanelLayout rmx16_layout() {
         d.w = sign ? 4.2f : 5.4f, d.x = dc[i] - d.w / 2, d.y = 18.0f, d.h = 8.1f, d.id = i;
         d.style = sign ? E::Sign : E::Seven;
         d.colour = 0xffff2a1a;
+        d.size = 1.8f;   // segments ~10.5 % of the digit height (the close-up photo's dim segments)
         add(d);
     }
     {

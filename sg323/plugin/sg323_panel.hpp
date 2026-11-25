@@ -68,6 +68,7 @@ inline kit::PanelLayout sg323_layout() {
         E d;
         d.kind = E::Digit;
         d.w = 5.4f, d.h = 8.2f, d.x = cx - d.w / 2, d.y = 25.8f - d.h / 2, d.id = id, d.colour = 0xffff2a1a;
+        d.size = 2.1f;   // ~12 % of the height (the lit photos, ~15 % with their glow)
         add(d);
     };
     auto pot = [&](float cx, float cy, float d, const char* param, uint32_t cap) {

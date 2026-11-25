@@ -547,7 +547,8 @@ void PanelView::paintDigit(juce::Graphics& g, const E& e, uint8_t segs) {
     const auto r = mm(e.x, e.y, e.w, e.h);
     const auto col = argb(e.colour, 0xffff2a1a);
     // a 12 x 18 cell: the digit in 0..10, the point at 10.8; slanted ~7 degrees
-    const float sx = r.getWidth() / 12.0f, sy = r.getHeight() / 18.0f, t = 1.55f, gp = 0.28f, slant = 0.12f;
+    // the segment width in cell units: `size` per display (the photos), else 1.55 (~9 % of the height)
+    const float sx = r.getWidth() / 12.0f, sy = r.getHeight() / 18.0f, t = e.size > 0 ? e.size : 1.55f, gp = 0.28f, slant = 0.12f;
     auto P = [&](float x, float y) { return juce::Point<float>(r.getX() + (x + (18.0f - y) * slant) * sx, r.getY() + y * sy); };
     auto hseg = [&](float x0, float x1, float y) {
         juce::Path p;

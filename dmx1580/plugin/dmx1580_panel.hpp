@@ -168,6 +168,7 @@ inline kit::PanelLayout dmx1580_layout() {
         E d;
         d.kind = E::Digit;
         d.x = dx[i], d.y = 10.0f, d.w = 11.6f, d.h = 19.0f, d.id = i, d.colour = 0xffff2a1a;
+        d.size = 2.25f;   // bold: ~13 % of the height (dim segments in the unlit photo; no lit photo)
         add(d);
     }
     text(349.2f, 5.6f, "\xe2\x88\xa7", 2.45f);   // the ^ / v arrows: their LEDs are not lit by this firmware

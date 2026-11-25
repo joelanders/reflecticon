@@ -115,6 +115,7 @@ inline kit::PanelLayout dn780_layout() {
         E d;
         d.kind = E::Digit;
         d.w = 7.0f, d.h = 10.9f, d.x = cx - d.w / 2, d.y = dig_y - d.h / 2, d.id = id, d.colour = col, d.style = style;
+        d.size = 1.9f;   // ~11 % of the height (the lit photo)
         add(d);
     };
     auto key = [&](float cx, float cy, int id, const char* legend, const char* hot, float w = 16.4f, float h = 8.2f) {

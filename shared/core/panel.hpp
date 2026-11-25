@@ -33,7 +33,8 @@ struct PanelElement {
                   // `style` = KeyStyle, `hotkey` = computer keys that press it
         Led,      // an indicator: `id` = index into PanelState::leds, `colour` = its lit colour.
                   // An LED the emulation does not drive has id -1 and is drawn dark.
-        Digit,    // a 7-segment digit: `id` = index into PanelState::digits, `style` = DigitStyle
+        Digit,    // a 7-segment digit: `id` = index into PanelState::digits, `style` = DigitStyle,
+                  // `size` = segment width in units of a 12 x 18 cell (0 = 1.55)
         Alpha,    // alphanumeric characters: `id` = first index into PanelState::alpha, `count` chars
         Pot,      // a knob: `param` (host parameter) or `id` (PanelInput), `text` = dial numerals, or
                   // "low|high" for a label at each end, `size` = their cap height (0 = 2.2 mm), `style` =
