@@ -100,7 +100,7 @@ public:
         }
         o.param[PhaseA] = v_[PhaseA] > 0.5f ? "A out of phase" : "in phase";
         o.param[MonoIn] = v_[MonoIn] > 0.5f ? "A feeds both" : "stereo";
-        o.param[MixOut] = v_[MixOut] > 0.5f ? "(A + B) / 2" : "separate";
+        o.param[MixOut] = v_[MixOut] > 0.5f ? "summed (A + B) / 2" : "separate";
         o.param[LockIn] = v_[LockIn] > 0.5f ? "locked" : "off";
         o.param[Trigger] = v_[Trigger] > 0.5f ? "held" : "off";
         int ri = std::clamp(int(std::lround(v_[Ram])), 0, 3);
@@ -289,7 +289,7 @@ kit::Info make_info() {
         {"vcoDepth", "VCO Depth", K::Float, 0, 20, 0, {}, "%"},
         {"phaseA", "Phase A Out", K::Bool, 0, 1, 0, {}, ""},
         {"monoIn", "Mono Input", K::Bool, 0, 1, 0, {}, ""},
-        {"mixOut", "Mix Outputs", K::Bool, 0, 1, 0, {}, ""},
+        {"mixOut", "Sum Outputs", K::Bool, 0, 1, 0, {}, ""},
         {"lockin", "Lock In", K::Bool, 0, 1, 0, {}, ""},
         {"trigger", "Trigger", K::Bool, 0, 1, 0, {}, ""},
         {"ram", "RAM per channel", K::Choice, 0, 3, 3, {"4K words", "16K words", "32K words", "64K words"}, ""},
@@ -304,7 +304,7 @@ kit::Info make_info() {
                                        {"fbGainB", "F/B Gain"}, {"fbFilterB", "F/B Filter"}});
     kit::group(i.params, "VCO", {{"vco", "XTAL/VCO"}, {"vcoSpeed", "Speed"}, {"vcoDepth", "Depth"}});
     kit::group(i.params, "Lock-in", {{"lockin", "Lock In"}, {"trigger", "Trigger"}});
-    kit::group(i.params, "In / Out", {{"out", "Output"}, {"monoIn", "Mono input"}, {"mixOut", "Mix outputs"}});
+    kit::group(i.params, "In / Out", {{"out", "Output"}, {"monoIn", "Mono input"}, {"mixOut", "Sum outputs"}});
     kit::group(i.params, "Unit", {{"ram", "RAM"}, {"boards", "Pitch boards"}, {"analog", "Analog"}, {"smooth", "Smooth pitch"}});
     i.groups = {"Channel A", "Channel B", "VCO", "Lock-in", "In / Out", "Unit"};
     i.mix_group = "In / Out";

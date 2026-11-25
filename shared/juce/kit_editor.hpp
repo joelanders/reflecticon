@@ -45,6 +45,7 @@ private:
         std::unique_ptr<juce::ComboBox> sync;   // Param::tempo_sync: off or a note value
         std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> syncA;
         int group = -1;   // index in groups_, or -1: the shared controls under the boxes
+        int pos = 0;      // order in its box (Param::group_pos)
         juce::Component* control() const {
             return slider ? (juce::Component*)slider.get()
                    : combo ? (juce::Component*)combo.get()

@@ -145,11 +145,21 @@ public:
         o.param[Level] = trim(digits({0}));
         o.param[LF] = trim(digits({2, 5}));
         o.param[HF] = trim(digits({6, 7}));
+        if (rev) {   // the reverbs' meanings (the manual): level is depth, LF/HF are steps against the decay
+            if (!o.param[Level].empty()) o.param[Level] += " of 9 (depth)";
+            auto rel = [](std::string& s, const char* minus) {
+                if (s.empty()) return;
+                const int v = std::atoi(s.c_str());
+                s += v == 0 ? " (as decay)" : v < 0 ? minus : " (longer)";
+            };
+            rel(o.param[LF], " (shorter)");
+            rel(o.param[HF], " (darker)");
+        }
         o.param[Decay] = rev ? dec + " s" : dec;
         o.param[Size] = size + " m";
         for (int k = 0; k < 7; k++)
             if (!used_[k]) o.param[Predelay + k] = "";
-        o.param[Calibrated] = rev ? (cal_ ? "on" : "off") : "";
+        o.param[Calibrated] = rev ? (cal_ ? "matched to recordings" : "design values") : "";
         {
             const float g = gain_.load(std::memory_order_relaxed);
             char b[32];
@@ -367,10 +377,18 @@ kit::Info make_info() {
         {"lf", "LF", K::Int, 0, 14, 7, {}, ""},
         {"hf", "HF", K::Int, 0, 14, 7, {}, ""},
         {"decay", "Decay", K::Int, 0, 26, 11, {}, ""},
-        {"size", "Size", K::Int, 0, 11, 1, {}, ""},
-        {"calibrated", "Recorded-unit tail", K::Bool, 0, 1, 0, {}, ""},
-        {"inputLevel", "Input level", K::Float, 0, 10, 5, {}, ""},
+        {"size", "Room size", K::Int, 0, 11, 1, {}, ""},
+        {"calibrated", "Real-unit tail", K::Bool, 0, 1, 0, {}, ""},
+        {"inputLevel", "Input", K::Float, 0, 10, 5, {}, ""},
     };
+    // the boxes follow the panel's own brackets (REFLECTIONS, REVERBERATION)
+    kit::group(i.params, "Program", {{"program", "Program"}, {"predelay", "Predelay"}});
+    kit::group(i.params, "Reflections", {{"pattern", "Pattern"}, {"level", "Level"}});
+    kit::group(i.params, "Reverberation", {{"decay", "Decay"}, {"lf", "LF"}, {"hf", "HF"}, {"size", "Room size"},
+                                           {"calibrated", "Tail"}});
+    kit::group(i.params, "In / Out", {{"inputLevel", "Input"}});
+    i.groups = {"Program", "Reflections", "Reverberation", "In / Out"};
+    i.mix_group = "In / Out";
     kit::describe(i.params, {
         {"program",
          "The program, run by the unit's own firmware. Greyed-out rows are keys this program does not use."},
@@ -389,7 +407,7 @@ kit::Info make_info() {
         {"size",
          "Room size (the readout shows metres)."},
         {"calibrated",
-         "Shapes the tail to match recordings of a real unit instead of the design values."},
+         "Shapes the reverb tail to match recordings of a real unit instead of the design values."},
         {"inputLevel",
          "The front panel's LEVEL knob: 5 (straight up) is 0 dB, 10 is +6 dB, 0 is off."},
     });

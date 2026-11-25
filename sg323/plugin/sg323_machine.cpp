@@ -170,8 +170,11 @@ public:
         proms_.predelay_codes(pdc);
         o.param[Predelay] = fmt("%.0f ms", proms_.predelay_ms(pdc[std::clamp(c.predelay, 0, 15)]));
         // LF / HF decay: RV2 / RV3 set the loop's (and, for HF, the input's) corners; max = least cut
-        o.param[LfDecay] = fmt("loop cut < %.0f Hz", 1.0 / (2 * M_PI * 0.22e-6 * (1500.0 + c.lf_eq * 50000.0)));
-        o.param[HfDecay] = fmt("cut > %.1f kHz", 1.0 / (2 * M_PI * (3300.0 + c.hf_eq * 50000.0) * 1e-9) / 1000.0);
+        // the corners of the filters in the reverb loop: lower = the lows / highs die away sooner
+        const double lf_hz = 1.0 / (2 * M_PI * 0.22e-6 * (1500.0 + c.lf_eq * 50000.0));
+        const double hf_khz = 1.0 / (2 * M_PI * (3300.0 + c.hf_eq * 50000.0) * 1e-9) / 1000.0;
+        o.param[LfDecay] = lf_hz < 20.0 ? std::string("full (no low cut)") : fmt("low cut %.0f Hz", lf_hz);
+        o.param[HfDecay] = hf_khz > 20.0 ? std::string("full (no high cut)") : fmt("high cut %.1f kHz", hf_khz);
         o.param[Input] = fmt("%.1f", v_[Input]);
         o.param[InputMute] = c.input_mute ? "muted" : "off";
         // as the panel marks the knobs, 0-10
@@ -356,7 +359,7 @@ kit::Info make_info() {
         {"directMix", "Direct mix", K::Float, 0, 1, 0, {}, ""},
         {"reverbMix", "Reverb mix", K::Float, 0, 1, 1, {}, ""},
         {"room", "Room", K::Choice, 0, 7, 2, rooms, ""},
-        {"predelay", "Pre delay", K::Choice, 0, 15, 0, pre, ""},
+        {"predelay", "Predelay", K::Choice, 0, 15, 0, pre, ""},
         {"decay", "Decay time", K::Choice, 0, 7, 5, decays, ""},
         {"inputMute", "Input mute", K::Bool, 0, 1, 0, {}, ""},
         {"dryOnly", "Dry only", K::Bool, 0, 1, 0, {}, ""},
@@ -365,6 +368,12 @@ kit::Info make_info() {
         {"hiss", "Input hiss", K::Bool, 0, 1, 1, {}, ""},
         {"unit", "Unit", K::Choice, 0, 1, 0, {"design values", "ravettel's unit"}, ""},
     };
+    kit::group(i.params, "Reverb", {{"room", "Room"}, {"predelay", "Predelay"}, {"decay", "Decay time"},
+                                    {"lfEq", "LF decay"}, {"hfDecay", "HF decay"}});
+    kit::group(i.params, "In / Out", {{"inputLevel", "Input"}, {"directMix", "Direct"}, {"reverbMix", "Reverb"}});
+    kit::group(i.params, "Switches", {{"inputMute", "Input mute"}, {"dryOnly", "Dry only"}, {"reverbClear", "Reverb clear"}});
+    kit::group(i.params, "Unit", {{"modulation", "Modulation"}, {"hiss", "Input hiss"}, {"unit", "Calibration"}});
+    i.groups = {"Reverb", "In / Out", "Switches", "Unit"};
     kit::momentary(i.params, {{"reverbClear", "Clear"}});
     i.panel = sg323_layout();
     kit::describe(i.params, {

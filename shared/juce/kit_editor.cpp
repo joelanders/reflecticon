@@ -39,6 +39,7 @@ Editor::Editor(Processor& p) : AudioProcessorEditor(p), proc_(p) {
             const juce::String g(prm.group);
             auto at = std::find(groups_.begin(), groups_.end(), g);
             r->group = int(at - groups_.begin());
+            r->pos = prm.group_pos;
             if (at == groups_.end()) groups_.push_back(g);
         }
         r->name.setText(r->group >= 0 && !prm.short_name.empty() ? prm.short_name : prm.name, juce::dontSendNotification);
@@ -109,6 +110,7 @@ Editor::Editor(Processor& p) : AudioProcessorEditor(p), proc_(p) {
         if (!info.mix_group.empty()) {
             auto at = std::find(groups_.begin(), groups_.end(), juce::String(info.mix_group));
             r->group = int(at - groups_.begin());
+            r->pos = 1 << 20;   // last in its box
             if (at == groups_.end()) groups_.push_back(juce::String(info.mix_group));
         }
         const char* help = "Dry signal against the effect, after the machine: 100 % is the effect alone, as the hardware gives it.";
@@ -304,8 +306,11 @@ void Editor::layoutNative() {
                 boxes_.push_back(box);
                 auto in = box.reduced(kBoxInset, 0);
                 in.removeFromTop(kBoxHead);
+                std::vector<Row*> members;
                 for (auto& r : rows_)
-                    if (r->group == int(j)) place(*r, in.removeFromTop(kRowH), kBoxNameW);
+                    if (r->group == int(j)) members.push_back(r.get());
+                std::stable_sort(members.begin(), members.end(), [](Row* a, Row* b) { return a->pos < b->pos; });
+                for (auto* r : members) place(*r, in.removeFromTop(kRowH), kBoxNameW);
             }
         }
         if (!shared.empty()) {
@@ -350,6 +355,8 @@ void Editor::timerCallback() {
         }
         const int sc = row.sync ? proc_.syncChoice(i) : 0;
         if (sc > 0 && used) text = Processor::syncChoices()[sc] + juce::String(juce::CharPointer_UTF8(" \xc2\xb7 ")) + text;
+        // a dropdown's readout that only says what the dropdown says ("Room 3", "1 AMBIENCE") is left blank
+        if (used && row.combo && row.combo->getText().isNotEmpty() && text.endsWith(row.combo->getText())) text = {};
         row.readout.setText(used ? text : juce::String(juce::CharPointer_UTF8("\xe2\x80\x94")), juce::dontSendNotification);
         row.name.setAlpha(used ? 1.0f : 0.4f);
         row.control()->setAlpha(used && sc == 0 ? 1.0f : 0.4f);   // the tempo sets it

@@ -27,18 +27,22 @@ struct Param {
     std::string unit;                   // Float/Int: shown after the value when no readout
     std::string help;                   // the editor's tooltip: what the control does (describe())
     std::string group, short_name;      // the editor's box for it, and its name there (group())
+    int group_pos = 0;                  // its place in the box: the order group() lists them in
     bool momentary = false;             // Bool: a push button, on while held (momentary())
     std::string button;                 // its label
     bool tempo_sync = false;            // a time (ms) or rate (Hz) the host tempo may set (tempo_sync())
 };
 
 // A box in the editor for related controls (a channel's), two boxes to a row in Info::groups order,
-// the controls named shorter inside it: group(i.params, "Channel A", {{"delayA", "Delay"}, ...}).
+// the controls named shorter inside it, in the order listed: group(i.params, "Channel A", {{"delayA", "Delay"}, ...}).
 inline void group(std::vector<Param>& params, const char* name,
                   std::initializer_list<std::pair<const char*, const char*>> members) {
-    for (auto& [id, short_name] : members)
+    int pos = 0;
+    for (auto& [id, short_name] : members) {
         for (auto& p : params)
-            if (p.id == id) p.group = name, p.short_name = short_name;
+            if (p.id == id) p.group = name, p.short_name = short_name, p.group_pos = pos;
+        pos++;
+    }
 }
 
 // Bool controls that are push buttons on the hardware, on while held: {{"id", "button label"}, ...}.

@@ -75,9 +75,9 @@ int main(int argc, char** argv) {
         host.install(t.boot(roms, "", &err));
         auto r = host.readouts();
         bool ok = true;
-        for (int k = 0; k < 8; k++) {   // Pattern's readout adds what the digit means ("8 of 9 (density)")
+        for (int k = 0; k < 8; k++) {   // pattern, level, LF, HF add what the digit means ("8 of 9 (density)")
             std::string got = r.param[size_t(k)];
-            if (k == 2) got = got.substr(0, got.find(' '));
+            if (k >= 2 && k <= 5) got = got.substr(0, got.find(' '));
             ok &= got == c.want[k];
         }
         std::printf("  %s %-4s [%s]", ok ? "ok  " : "FAIL", c.name, r.panel.c_str());
