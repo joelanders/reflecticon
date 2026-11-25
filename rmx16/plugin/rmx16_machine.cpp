@@ -9,7 +9,7 @@
 namespace rmx16plug {
 namespace {
 
-enum P { Program, Predelay, Decay, LF, HF, Swap, NumParams };
+enum P { Program, Predelay, Decay, LF, HF, Swap, Converter, NumParams };
 
 // v3.2's programs as its panel accepts them (RMX16 project notes 2026-11-11-2321 and
 // 2026-11-12-0115: keypad entry searched for the predelay maximum; the key LEDs for which filters
@@ -75,6 +75,8 @@ public:
         engine_.set_target(t);
         swap_on_ = v[Swap] > 0.5f;
         engine_.set_swap(swap_on_);
+        conv_on_ = v.size() > Converter ? v[Converter] > 0.5f : true;
+        engine_.set_converter(conv_on_);
         // before audio starts, type it here so the first block hears it (a session load, an
         // offline render); once audio runs, the audio thread's driver types it
         if (!audio_started_.load(std::memory_order_acquire)) {
@@ -127,6 +129,7 @@ public:
         o.param[LF] = g && g->lf ? sign(p.lf_sign) + lf : "";
         o.param[HF] = g && g->hf ? sign(p.hf_sign) + hf : "";
         o.param[Swap] = swap_on_ ? "DAC B left" : "DAC A left";
+        o.param[Converter] = conv_on_ ? "12-bit gain ranging" : "plain 16-bit";
         // the panel left to right: program, predelay, decay, LF, HF, then the name
         o.panel = prog + "  " + field(2, 4) + "  " + dec + "  " + sign(p.lf_sign) + lf + "  " + sign(p.hf_sign) + hf +
                   "   " + name;
@@ -201,6 +204,7 @@ private:
     std::atomic<int> owner_{0};   // 0 free, 1 control (typing before audio), 2 audio
     std::atomic<bool> audio_started_{false};
     bool swap_on_ = false;   // control thread
+    bool conv_on_ = true;
 };
 
 std::unique_ptr<kit::Machine> boot(const kit::RomSet& roms, const std::string& state, std::string* err) {
@@ -231,6 +235,7 @@ kit::Info make_info() {
         {"lf", "Decay LF", K::Int, -9, 9, 0, {}, ""},
         {"hf", "Decay HF", K::Int, -9, 0, -4, {}, ""},
         {"swap", "Swap outputs", K::Bool, 0, 1, 0, {}, ""},
+        {"converter", "Converter", K::Bool, 0, 1, 1, {}, ""},
     };
     kit::tempo_sync(i.params, {"predelay"});
     kit::describe(i.params, {
@@ -246,6 +251,8 @@ kit::Info make_info() {
          "High-frequency decay against the main decay: lower values darken the tail. Not every program has it."},
         {"swap",
          "Swaps the two outputs (DAC A and DAC B)."},
+        {"converter",
+         "The unit's input converter: a 12-bit converter whose gain switches in 6 dB steps with the level, so loud passages are coarser (12 bits) than quiet ones (15). Off: a clean 16-bit input."},
     });
     i.roms = {
         {"boot ROM R316", {2048, 4096}, {{"eb88029bea7fd6757b6e56ad35d6eeee8f15e1893ae08c993a24cac07854a04c", "R316"}}, {"r316", "316"}},
