@@ -162,9 +162,10 @@ void Editor::setMode(bool hardware) {
     }
     panel_.setVisible(!hardware);
     for (auto& r : rows_) {
-        r->name.setVisible(!hardware);
-        r->readout.setVisible(!hardware);
-        r->control()->setVisible(!hardware);
+        const bool show = !hardware || r.get() == mixRow();   // the kit's Mix is not on any panel: it stays
+        r->name.setVisible(show);
+        r->readout.setVisible(show);
+        r->control()->setVisible(show);
         if (r->sync) r->sync->setVisible(!hardware);
     }
     layoutSize();
@@ -259,6 +260,12 @@ void Editor::layoutNative() {
             bar.removeFromRight(8);
         }
         presets_.setBounds(bar.removeFromRight(320));
+        if (auto* m = mixRow()) {   // the kit's wet/dry, under the panel's left end
+            m->name.setBounds(bar.removeFromLeft(48));
+            m->control()->setBounds(bar.removeFromLeft(280));
+            bar.removeFromLeft(10);
+            m->readout.setBounds(bar.removeFromLeft(96));
+        }
         b.removeFromTop(8);
         status_.setBounds(b.removeFromTop(20));
         return;
@@ -361,6 +368,10 @@ void Editor::timerCallback() {
         romsButton_.setVisible(romsShown_);
         resized();
     }
+}
+
+Editor::Row* Editor::mixRow() const {
+    return !proc_.info().own_mix && rows_.size() > proc_.info().params.size() ? rows_.back().get() : nullptr;
 }
 
 void Editor::refreshPresets() {

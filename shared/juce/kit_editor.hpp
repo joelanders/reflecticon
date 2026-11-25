@@ -61,6 +61,8 @@ private:
     std::unique_ptr<PanelView> panelView_;
     juce::TooltipWindow tooltips_{this, 600};
     std::vector<std::unique_ptr<Row>> rows_;
+    // the kit's Mix row (the last row, after the machine's), or null when the unit mixes itself
+    Row* mixRow() const;
     std::vector<Preset> presetList_;
     std::unique_ptr<juce::FileChooser> chooser_;
     bool hasPanel_ = false;
