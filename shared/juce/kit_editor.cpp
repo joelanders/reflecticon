@@ -3,7 +3,7 @@
 namespace kit {
 
 namespace {
-const juce::Colour kBg{0xff1d1f22}, kPanel{0xff0b0b0b}, kLed{0xffff3b2f}, kText{0xffe6e6e6}, kDim{0xff7a7d82},
+const juce::Colour kBg{0xff1d1f22}, kText{0xffe6e6e6}, kDim{0xff7a7d82},
     kAccent{0xffd9a441};
 constexpr int kW = 560, kRowH = 30, kPad = 16, kNameW = 150, kReadW = 130;
 // grouped controls: boxes kBoxW wide, kGap apart; the shared controls in columns as wide below
@@ -26,11 +26,6 @@ Editor::Editor(Processor& p) : AudioProcessorEditor(p), proc_(p) {
     title_.setColour(juce::Label::textColourId, kText);
     addAndMakeVisible(title_);
 
-    panel_.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 22.0f, juce::Font::bold));
-    panel_.setColour(juce::Label::textColourId, kLed);
-    panel_.setColour(juce::Label::backgroundColourId, kPanel);
-    panel_.setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(panel_);
 
     for (auto& g : info.groups) groups_.push_back(juce::String(g));
     for (auto& prm : info.params) {
@@ -162,7 +157,6 @@ void Editor::setMode(bool hardware) {
         panelView_->setVisible(hardware);
         if (!hardware) panelView_->releaseAll();
     }
-    panel_.setVisible(!hardware);
     for (auto& r : rows_) {
         const bool show = !hardware || r.get() == mixRow();   // the kit's Mix is not on any panel: it stays
         r->name.setVisible(show);
@@ -184,7 +178,7 @@ void Editor::layoutSize() {
     } else {
         const int g = int(groups_.size());
         nativeW_ = g ? 2 * kPad + columns() * kBoxW + (columns() - 1) * kGap : kW;
-        nativeH_ = kPad + 30 + 8 + 52 + 12 + easyHeight() + 12 + 28 + 8 + 20 + kPad;
+        nativeH_ = kPad + 30 + 12 + easyHeight() + 12 + 28 + 8 + 20 + kPad;
     }
     const float scale = std::clamp(proc_.editorScale, 0.5f, 3.0f);
     setResizeLimits(nativeW_ / 2, nativeH_ / 2, nativeW_ * 3, nativeH_ * 3);
@@ -272,8 +266,6 @@ void Editor::layoutNative() {
         status_.setBounds(b.removeFromTop(20));
         return;
     }
-    b.removeFromTop(8);
-    panel_.setBounds(b.removeFromTop(52));
     b.removeFromTop(12);
     auto place = [](Row& r, juce::Rectangle<int> row, int nameW) {
         r.name.setBounds(row.removeFromLeft(nameW));
@@ -339,8 +331,6 @@ void Editor::timerCallback() {
     if (panelView_ && panelView_->isVisible()) panelView_->refresh();
     auto r = proc_.host().readouts();
     const auto& info = proc_.info();
-    hasPanel_ = !r.panel.empty();
-    panel_.setText(hasPanel_ ? juce::String(r.panel) : juce::String("- - -"), juce::dontSendNotification);
     bool have = proc_.host().has_machine();
     for (size_t i = 0; i < rows_.size(); i++) {
         auto& row = *rows_[i];

@@ -55,7 +55,7 @@ private:
     };
 
     Processor& proc_;
-    juce::Label title_, panel_, status_;
+    juce::Label title_, status_;
     juce::ComboBox presets_;
     juce::TextButton romsButton_{"Choose ROMs..."};
     juce::TextButton modeButton_;
@@ -66,7 +66,6 @@ private:
     Row* mixRow() const;
     std::vector<Preset> presetList_;
     std::unique_ptr<juce::FileChooser> chooser_;
-    bool hasPanel_ = false;
     bool romsShown_ = true;                     // the ROM button, while the ROMs need attention
     static constexpr int kChooseRomsItem = 100000;   // the presets menu's last item
     std::vector<juce::String> groups_;          // Param::group names, in order

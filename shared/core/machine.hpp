@@ -78,7 +78,7 @@ struct Readouts {
     // per parameter, in table order: the machine's own text for the value (e.g. the firmware's
     // display digits), "" = the parameter does nothing in this setting
     std::vector<std::string> param;
-    std::string panel;    // the front panel's display as text, or ""
+    std::string panel;    // the front panel's display as text, or "" (for tests and logs; the editor does not show it)
     std::string status;   // a line for the user (program, warnings), or ""
 };
 
