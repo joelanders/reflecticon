@@ -105,4 +105,9 @@ in C++ and was gate-checked in the project against the COP's own microcode.
     isn't traced.
   - Copying (`=`), the user memories and clearing them.
 
-  FREEZE, ENTER (the input gate) and MUTE follow the manual, and FREEZE is gate-checked in the project.
+  FREEZE, ENTER (the input gate) and MUTE follow the manual. FREEZE is gate-checked in the project,
+  switched on mid-sound and off again (297/297 frames identical). The plugin switches it between
+  frames, where the hardware switches at the next group boundary: within one frame.
+- **DY bit 0 is timing-sensitive** in the gate sim. The rule the model uses holds at nominal and slow
+  memory timing. Near the read path's edge (just over one 48.8 ns clock), about 23 % of words take a
+  different bit 0. That is ±1 LSB before level scaling, and an open hardware question.
