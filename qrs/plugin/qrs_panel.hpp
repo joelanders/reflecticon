@@ -1,7 +1,6 @@
 // The QRS front panel for the kit's hardware mode (kit::PanelLayout), measured from a straight-on
-// reference photo (the QRS project's photos/qrs_front_straight_display-lit_soundgas; local reference
-// only: nothing of it is shipped, this is a vector drawing at its positions). 19" 2U, millimetres
-// (4.654 photo px per mm, panel origin at photo px (82, 70)).
+// reference photo (local reference only: nothing of it is shipped, this is a vector drawing at its
+// positions). 19" 2U, millimetres.
 //
 // The panel's own schematic sheet (TE/TD) is not transcribed: the key behaviour follows the owner's
 // manual (pp 9-14, 22-23), not the circuit. Each parameter has [-] and [+]; touching one also assigns
@@ -108,21 +107,22 @@ inline kit::PanelLayout qrs_layout() {
 
     // effects
     frame(116.0f, 6.4f, 141.8f, 79.4f, "EFFECTS");
-    key(127.4f, 19.3f, KeyEnter, "ENT", "e");
-    key(127.4f, 35.4f, KeyMute, "MUTE", "m");
-    key(127.4f, 51.1f, KeyFreeze, "FRE", "f");
-    key(127.4f, 66.5f, KeyEnhance, "ENH", "");
-    led(120.0f, 45.6f, LedFreeze, 1.6f, 0xffff3020);
-    led(120.0f, 61.0f, -1, 1.6f, 0xffff3020);
+    // small legends, as on the unit; the FREEZE and ENHANCE LEDs sit in their keys' top-left corners
+    key(127.4f, 19.3f, KeyEnter, "ENT", "e"), L.elements.back().size = 3.2f;
+    key(127.4f, 35.4f, KeyMute, "MUTE", "m"), L.elements.back().size = 3.2f;
+    key(127.4f, 51.1f, KeyFreeze, "FRE", "f"), L.elements.back().size = 3.2f;
+    key(127.4f, 66.5f, KeyEnhance, "ENH", ""), L.elements.back().size = 3.2f;
+    led(122.4f, 46.3f, LedFreeze, 1.6f, 0xffff3020);
+    led(122.4f, 61.7f, -1, 1.6f, 0xffff3020);
 
     // parameters
     frame(147.8f, 6.4f, 336.5f, 79.4f, "PARAMETERS");
-    frame(152.0f, 11.0f, 219.6f, 43.4f, "1st REFLECTION");
-    frame(152.0f, 43.4f, 219.6f, 77.2f, "");
-    frame(263.2f, 11.0f, 333.0f, 58.4f, "REVERB TIME");
-    frame(263.2f, 58.4f, 333.0f, 77.2f, "");
-    text(200.5f, 76.3f, "REVERB", 2.3f);
-    text(282.1f, 76.3f, "ROOM SIZE", 2.3f);
+    frame(150.6f, 9.8f, 219.6f, 43.4f, "1st REFLECTION");
+    frame(150.6f, 43.4f, 219.6f, 78.2f, "");
+    frame(263.2f, 9.8f, 334.4f, 58.4f, "REVERB TIME");
+    frame(263.2f, 58.4f, 334.4f, 78.2f, "");
+    text(200.5f, 76.0f, "REVERB", 2.1f);
+    text(282.1f, 76.0f, "ROOM SIZE", 2.1f);
     const float row[4] = {19.3f, 35.4f, 51.1f, 66.5f};
     const float win[4] = {17.6f, 33.7f, 49.4f, 65.0f};
     // left: 1st reflection delay, level; reverb delay, level

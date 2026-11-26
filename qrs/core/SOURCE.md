@@ -38,7 +38,7 @@ and was gate-checked in the project against the COP's own microcode.
 - the panel: parameter keys, the knob following the last key, memory recall (`*` 8 6), FREEZE;
 - the kit's host checks at 44.1, 48 and 96 kHz (block-size independence, no allocation in
   `process()`), two instances, a live change without allocation;
-- auval `aufx Qr82 Rflx`: passed;
+- auval `aufx Qr82 Rflx`: passed; pluginval strictness 10 on the VST3 (GUI tests skipped): SUCCESS;
 - the web module in Node: boots, 14 presets, 53x real time;
 - the cost is 68x real time on one thread (M-series Mac).
 

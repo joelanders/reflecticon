@@ -29,6 +29,7 @@ struct PanelElement {
         Window,   // a display window (filter glass): `colour` = its tint (0 = dark red), `style` 1 = round ends
         Text,     // a printed legend: `text`, `size` = cap height (mm, 0 = 2.1), `style` = Justify
         Key,      // a momentary key: `id` = key id for Machine::panel_key, `text` = legend on the cap
+                  // (`size` = its cap height in mm, 0 = 35 % of the key's height)
                   // (`colour` = its colour, 0 = dark ink),
                   // `style` = KeyStyle, `hotkey` = computer keys that press it
         Led,      // an indicator: `id` = index into PanelState::leds, `colour` = its lit colour.

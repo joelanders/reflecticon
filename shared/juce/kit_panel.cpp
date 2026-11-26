@@ -143,7 +143,7 @@ public:
         if (!e_.text.empty()) {
             g.setColour(argb(e_.colour, 0xff151515));   // colour: the legend's (white on dark caps)
             // the keypad's printed caps carry big legends (the RMX16 photos: ~60 % of the cap)
-            g.setFont(v_.legendFont(e_.h * (e_.style == E::KeypadCream ? 0.58f : 0.35f), false));
+            g.setFont(v_.legendFont(e_.size > 0 ? e_.size : e_.h * (e_.style == E::KeypadCream ? 0.58f : 0.35f), false));
             g.drawText(juce::String::fromUTF8(e_.text.c_str()), r, juce::Justification::centred, false);
         }
         if (led_) {
