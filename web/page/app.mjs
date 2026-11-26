@@ -10,6 +10,7 @@ const MACHINES = [
   { id: 'rmx16', label: 'RMX16' },
   { id: 'dmx1580', label: 'DMX 15-80' },
   { id: 'sg323', label: 'StarGate 323' },
+  { id: 'qrs', label: 'QRS' },
 ];
 
 const $ = (id) => document.getElementById(id);

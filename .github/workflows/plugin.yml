@@ -1,5 +1,5 @@
 # Every machine's plugin: the 224 (224/juce-plugin) and the RMX16, DMX 15-80,
-# DN780 and StarGate 323 (the root CMake project). For macOS (AU, VST3 and the
+# DN780, StarGate 323 and QRS (the root CMake project). For macOS (AU, VST3 and the
 # standalone app), universal (Apple silicon and Intel), ad-hoc signed; for
 # Windows x64 (VST3 and the standalone app), unsigned; and for Linux x86_64
 # (VST3 and the standalone app), unsigned. One archive per machine and
@@ -19,7 +19,7 @@ env:
   JUCE_VERSION: "8.0.14"
   # The machines the root CMake project builds: folder (= CMake target prefix)
   # and the product name their bundles carry.
-  MACHINES: "rmx16:ReflecticonRMX16 dmx1580:ReflecticonDMX1580 dn780:ReflecticonDN780 sg323:ReflecticonSG323"
+  MACHINES: "rmx16:ReflecticonRMX16 dmx1580:ReflecticonDMX1580 dn780:ReflecticonDN780 sg323:ReflecticonSG323 qrs:ReflecticonQRS"
 
 jobs:
   macos:
@@ -341,7 +341,7 @@ jobs:
           files: package/*
           fail_on_unmatched_files: true
           body: |
-            Plugins for five machines, each its own archive per platform. Pick the ones you want:
+            Plugins for six machines, each its own archive per platform. Pick the ones you want:
 
             | Archive | Plugin (as hosts show it) | Your ROMs |
             |---|---|---|
@@ -350,12 +350,13 @@ jobs:
             | `ReflecticonDMX1580-…` | Reflecticon DMX 15-80 | AMS DMX 15-80S: DMX23-3 and DMX-10-SHL-406-1/2/3 |
             | `ReflecticonDN780-…` | Reflecticon DN780 | Klark Teknik DN780 v2.2 EPROM image |
             | `ReflecticonSG323-…` | Reflecticon StarGate 323 | Ursa Major StarGate 323: the 0803-0808 PROM images, binary |
+            | `ReflecticonQRS-…` | Reflecticon QRS | Quantec QRS: the MY (U426), SIP (U508) and DY (U633) PROM images, binary |
 
             Alpha builds for testing. They contain no firmware: open a plugin, choose (or drop) your own ROM files, and it remembers them. Until then it passes the audio through dry. All are by joelanders, manufacturer code `Rflx`.
 
             **Upgrading the 224 from Reflexion224:** remove the old `Reflexion224` plugin bundles before installing. The new ones carry the same plugin codes, so saved sessions open with them, and hosts get confused by two copies. Your ROM folder (`Application Support/Reflexion224`) is still used.
 
-            In the steps below, `<Name>` is the archive's product: `Reflecticon224`, `ReflecticonRMX16`, `ReflecticonDMX1580`, `ReflecticonDN780` or `ReflecticonSG323`.
+            In the steps below, `<Name>` is the archive's product: `Reflecticon224`, `ReflecticonRMX16`, `ReflecticonDMX1580`, `ReflecticonDN780`, `ReflecticonSG323` or `ReflecticonQRS`.
 
             ### macOS
 

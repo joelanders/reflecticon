@@ -1,6 +1,6 @@
 # The kit machines in the browser
 
-One page for every machine on the kit (DN780, RMX16, DMX 15-80, StarGate 323). Each runs live in an
+One page for every machine on the kit (DN780, RMX16, DMX 15-80, StarGate 323, QRS). Each runs live in an
 AudioWorklet as wasm, the same C++ as the plugins. Bring your own ROMs: drop the image files on the
 page; they are kept in that browser's IndexedDB and never uploaded. Nothing here holds ROM bytes.
 

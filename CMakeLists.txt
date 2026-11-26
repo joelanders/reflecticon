@@ -1,4 +1,4 @@
-# JUCE plugins for rmx16/, dmx1580/, dn780/ and sg323/, built on the code they share
+# JUCE plugins for rmx16/, dmx1580/, dn780/, sg323/ and qrs/, built on the code they share
 # (shared/). See shared/README.md. The 224 plugin builds on its own from 224/juce-plugin/.
 #
 #   cmake -S . -B build -G Ninja -DFETCHCONTENT_SOURCE_DIR_JUCE=/path/to/JUCE
@@ -51,3 +51,4 @@ add_subdirectory(dn780)
 add_subdirectory(rmx16)
 add_subdirectory(dmx1580)
 add_subdirectory(sg323)
+add_subdirectory(qrs)
