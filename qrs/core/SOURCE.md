@@ -11,12 +11,34 @@ not under git; `cpp/qrs.hpp` SHA-256 `a4567cd8…`, after the whole-chain bit-ex
 | `plugin/qrs_machine.cpp` | — | new: the kit adapter (the rate bridge at 80 kHz, the panel parameters, readouts, presets, the PROM table) |
 | `plugin/qrs_panel.hpp` | — | new: the front panel, drawn from the owner's manual and a reference photo (not shipped) |
 
-The plugin holds no PROM bytes: only sizes and SHA-256 hashes. The user supplies three images as
-binary files: MY (U426), SIP (U508) and DY (U633). The only known SIP dump has seven rotted bytes;
-the plugin recognises that dump by its hash and flips the seven bits back (the masks are in
-`qrs_machine.cpp`, found in the project's notes 2026-11-12), then checks the repaired hash. The COP
-controller's ROM is not needed: the panel-to-register mapping (`qrs::record_settings`) is done in C++
-and was gate-checked in the project against the COP's own microcode.
+## The PROM images
+
+The plugin holds no PROM bytes. It keeps only:
+- each chip's size and SHA-256;
+- the first 32 bits of each 128-byte page's SHA-256, enough to say which pages differ but nothing of
+  the bytes;
+- the SIP's seven repair masks.
+
+`qrs/tests/no_rom_bytes.py` (CI: `.github/workflows/rom-guard.yml`, on every pull request) fails on
+any binary file, long hex string or byte table in `qrs/`.
+
+The user supplies three images as binary files: MY (U426), SIP (U508) and DY (U633). At load:
+- **The SIP dump.** The only known dump has seven rotted bytes (the project's notes 2026-11-12). The
+  plugin recognises it by its hash, flips the seven masks back and checks the repaired chip's hash.
+- **A near miss.** If an image differs from the chip only at those seven addresses, the plugin repairs
+  them too. At each address the byte may be the chip's, a pure 1 -> 0 loss under the mask, or the
+  dump's own pattern (0x540 is not a pure loss). All combinations are tried against the chip's hash,
+  and the status line names the addresses repaired.
+- **Anything else.** An image that is neither a known chip nor a near miss is used as it is. The
+  status line names the pages that differ: SIP groups, MY room tables, or DY pages. Bytes can't be
+  named without holding the chip's bytes.
+- **Swapped slots.** Images in the wrong slots are put back, by hash or else by contents: DY's level
+  table at 0x300 rises from 0 to 0xff, and MY has seven pages of tables with the rest blank. The status
+  line says so. Two images that look like the same chip, or a wrong size, are refused with a message
+  naming the slots.
+
+The COP controller's ROM is not needed: the panel-to-register mapping (`qrs::record_settings`) is done
+in C++ and was gate-checked in the project against the COP's own microcode.
 
 ## How exact it is
 
@@ -29,25 +51,58 @@ and was gate-checked in the project against the COP's own microcode.
   near the law's steps: 0.25 % rms of the output on noise.
 - **Not compared with a real unit.** No recordings of a QRS against known settings were available.
 
-## Checked after the copy (2026-11-26, `qrs_check_machine` against the user's PROM images)
+## Checked (2026-11-26, `qrs_check_machine` against the user's PROM images)
 
-- readouts for every parameter; the factory programs' reverb times (files 7 and 8) within 6 % of the
-  project's measurements;
-- an impulse through the host: the reverb delay moves the tail, the 1st reflection lands on the right
-  output at the set time, FREEZE holds the tail, MUTE clears it;
-- the panel: parameter keys, the knob following the last key, memory recall (`*` 8 6), FREEZE;
-- the kit's host checks at 44.1, 48 and 96 kHz (block-size independence, no allocation in
-  `process()`), two instances, a live change without allocation;
-- auval `aufx Qr82 Rflx`: passed; pluginval strictness 10 on the VST3 (GUI tests skipped): SUCCESS;
-- the web module in Node: boots, 14 presets, 53x real time;
-- the cost is 68x real time on one thread (M-series Mac).
+- **Readouts and presets:** readouts for every parameter, and the factory programs' reverb times
+  (files 7 and 8) within 6 % of the project's measurements.
+- **An impulse through the host:**
+  - the reverb delay moves the tail;
+  - the 1st reflection lands on the right output at the set time, and 1 -> 200 ms moves it by 199.0 ms;
+  - FREEZE holds the tail, MUTE clears it;
+  - with the reverb and the reflection both off, outputs 1 and 2 are silent.
+- **Changes while a tail rings:**
+  - a reverb time change keeps the ring and switches the decay at once;
+  - a room change mutes the output for 0.5 s (manual p 15), then the kept memory rings on in the new
+    room.
+
+  The manual names no clearing for either.
+- **Extremes, at 10^6 m^3 and 100 s:**
+  - with LOW / HIGH at both panel limits, and with the SIP repaired or as dumped, there is no growth
+    over 15 s;
+  - the 4-bit HIGH / LOW registers at -8 / +7, beyond the panel, decay too (reported, not checked);
+  - 1 m^3 at 0.1 s dies away to the floor rounding's idle pattern (0.5 LSB rms).
+- **ROM handling, on images made at test time by flipping bits of the user's own:** the dump, the
+  chip, partial rot, extra rot, MY/DY swapped, all three moved, two DYs, a 2047-byte image, and MY or DY
+  with a byte changed.
+- **Host rates:** at 44.1, 48, 88.2, 96 and 192 kHz the reflection lands at the same time after the
+  reported latency (within 11 us).
+- **Block sizes:** blocks of 1, 4096 and random sizes give the same output as 512-sample blocks, bit
+  for bit.
+- **The kit's host checks:** no allocation in `process()`, two instances, and a live change without
+  allocation.
+- **The panel:** parameter keys, the knob following the last key, memory recall (`*` 8 6), FREEZE.
+- **Saved state:** the editor shot's state round trip gives the same panel.
+- **Validation:** auval `aufx Qr82 Rflx` passed; pluginval at strictness 10 on the VST3 (GUI tests
+  skipped): SUCCESS.
+- **Speed:** the web module boots in Node with 14 presets at 53x real time; the plugin runs at 68x
+  real time on one thread (M-series Mac).
 
 ## Known differences and open questions
 
-- The short programs (0.16–0.4 s, rooms 0 and 2) measure about 25 % shorter than their labels in the
-  1 kHz band. The project couldn't measure them on the unit either.
-- The 1st reflection's routing (input L's reflection on output 2) follows the manual (p 42), not a
-  measurement. It reaches outputs 1 / 2 only; the Outputs parameter picks 1 / 2, 3 / 4 (reverb only)
-  or their sum. Polarity re-inverts outputs 2 and 4, which the unit leaves inverted.
-- ENHANCE, copying (`=`) and the user memories are not modelled. The panel's own circuit sheet is not
-  transcribed: the keys follow the manual.
+- **Not compared with a real unit.** Every check is against the project's gate-level simulation of
+  the schematics and ROMs.
+- **8 kHz response:** XLR in to XLR out is -5.9 dB at 8 kHz in the model; the manual's specification
+  says -3 dB (the project's note 2026-11-18-0129).
+- **Reverb time:** the model's reverb time has an offset, and rooms 4-6 decay in two slopes. Both are
+  open in the project. Separately, the short programs (0.16-0.4 s, rooms 0 and 2) measure about 25 %
+  shorter than their labels at 1 kHz.
+- **Reflection routing:** input L's reflection on output 2 follows the manual (p 42), not a traced
+  backplane. It reaches outputs 1 / 2 only. The Outputs parameter picks 1 / 2, 3 / 4 (reverb only) or
+  their sum. Polarity re-inverts outputs 2 and 4, which the unit leaves inverted.
+- **The panel** is built from the manual. Its schematic sheet (6) is not transcribed.
+- **Not modelled:**
+  - ENHANCE: its key is drawn only. The manual describes seven fixed reflection programs whose circuit
+    isn't traced.
+  - Copying (`=`), the user memories and clearing them.
+
+  FREEZE, ENTER (the input gate) and MUTE follow the manual, and FREEZE is gate-checked in the project.

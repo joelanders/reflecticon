@@ -88,12 +88,186 @@ std::vector<float> factory_values(const Factory& f) {
     return {float(f.room), float(r), float(hi), float(lo), 1.0f, 0.0f, 1.0f, float(kLevelOff)};
 }
 
+// ---- the PROM images (no ROM bytes here: sizes, SHA-256 hashes, page-hash prefixes, repair masks) ----
+enum Role { RoleMy, RoleSip, RoleDy, NumRoles, RoleUnknown = -1 };
+const char* const kRoleName[NumRoles] = {"MY U426", "SIP U508", "DY U633"};
+const char* const kMyChip = "affdbf36b8ebe1f534741c074460df143fc4b8b3007ddf014c2a9e10f0fe946f";
+const char* const kDyChip = "2fce7e20a2f3ce18e089a663122747e54d11ae0bd1d1524521e0303ebcff799d";
 // SIP U508: the known dump has seven rotted bytes (QRS project notes 2026-11-12-1600): the dump's hash,
-// the repaired chip's hash, and the bits to flip. No ROM bytes.
+// the repaired chip's hash, and the bits to flip. Six are pure 1 -> 0 losses (the chip has 1s under the
+// mask); 0x540 is not (the dump has a 1 under its mask), so only the dump's own pattern repairs it.
 const char* const kSipDump = "e1f39c97025361c5a8a434a1740208d413a4c2e570ac1d0cfd9bae54655acf33";
 const char* const kSipRepaired = "72954733778de7ff01498dc3520502a5ddc5487614e183a245b050f3e8e8df0d";
-const std::pair<int, uint8_t> kSipRepairs[7] = {{0x440, 0xc8}, {0x460, 0x5f}, {0x4f0, 0x0d}, {0x540, 0xf0},
-                                                {0x560, 0x41}, {0x6ef, 0x02}, {0x7ef, 0x02}};
+struct Repair {
+    int at;
+    uint8_t mask;
+    bool pure;
+};
+const Repair kSipRepairs[7] = {{0x440, 0xc8, true}, {0x460, 0x5f, true}, {0x4f0, 0x0d, true}, {0x540, 0xf0, false},
+                               {0x560, 0x41, true}, {0x6ef, 0x02, true}, {0x7ef, 0x02, true}};
+// the first 32 bits of each 128-byte page's SHA-256 in the known chips (the SIP repaired): enough to say
+// which pages of an unknown image differ, and nothing of the bytes. MY page = room (7-15 unused, blank);
+// SIP page = group; DY page 6 holds the level table (0x300).
+const uint32_t kPageHash[NumRoles][16] = {
+    {0x70205e94u, 0xd1467764u, 0xbdb780a9u, 0x5ede761du, 0x8d8e11d1u, 0xaf659c5eu, 0xae28c825u, 0xe9175db6u,
+     0xe9175db6u, 0xe9175db6u, 0xe9175db6u, 0xe9175db6u, 0xe9175db6u, 0xe9175db6u, 0xe9175db6u, 0xe9175db6u},
+    {0xae01a179u, 0xb95ebedfu, 0x9ce1bdbeu, 0x5bf1c33du, 0x0d9d671au, 0x1a1ec43eu, 0x6953eafcu, 0xe216ef85u,
+     0x09b93f2bu, 0x4b82b002u, 0xecb85b63u, 0xc7ad929au, 0x82f8190au, 0xf340392cu, 0x7d03d785u, 0x690a8444u},
+    {0xe9175db6u, 0xe9175db6u, 0xd309cc5fu, 0xfe730275u, 0x8162309eu, 0x98706cbeu, 0x3e9f0e59u, 0x38723a2eu,
+     0xe9175db6u, 0xe9175db6u, 0xe9175db6u, 0xe9175db6u, 0xe9175db6u, 0xe9175db6u, 0xe9175db6u, 0xe9175db6u},
+};
+using Image = std::array<uint8_t, 2048>;
+std::string sha(const Image& b) { return kit::Sha256::of(b.data(), b.size()); }
+
+// a role from the image's hash, else from its contents: DY has the level table at 0x300-0x31f (rising
+// from 0 to 0xff); MY has seven pages of increment tables and the rest blank (0xff).
+Role role_of(const Image& b) {
+    const std::string h = sha(b);
+    if (h == kMyChip) return RoleMy;
+    if (h == kDyChip) return RoleDy;
+    if (h == kSipDump || h == kSipRepaired) return RoleSip;
+    bool dy = b[0x300] == 0 && b[0x31f] == 0xff;
+    for (int i = 0x300; i < 0x31f && dy; i++) dy = b[size_t(i)] <= b[size_t(i) + 1];
+    if (dy) return RoleDy;
+    bool my = true;
+    for (int i = 7 * 128; i < 2048 && my; i++) my = b[size_t(i)] == 0xff;
+    for (int pg = 0; pg < 7 && my; pg++) my = !std::all_of(b.begin() + pg * 128, b.begin() + pg * 128 + 128, [](uint8_t x) { return x == 0xff; });
+    return my ? RoleMy : RoleUnknown;
+}
+
+// the pages of `b` whose hash prefix differs from the known chip's
+std::vector<int> pages_differing(const Image& b, Role r) {
+    std::vector<int> out;
+    for (int pg = 0; pg < 16; pg++) {
+        const std::string h = kit::Sha256::of(b.data() + pg * 128, 128);
+        if (uint32_t(std::stoul(h.substr(0, 8), nullptr, 16)) != kPageHash[r][pg]) out.push_back(pg);
+    }
+    return out;
+}
+std::string list(const std::vector<int>& v) {
+    std::string s;
+    for (size_t i = 0; i < v.size(); i++) s += (i ? (i + 1 == v.size() ? " and " : ", ") : "") + std::to_string(v[i]);
+    return s;
+}
+std::string hex3(int a) {
+    char b[8];
+    std::snprintf(b, sizeof b, "0x%03x", a);
+    return b;
+}
+
+// The SIP: the known dump or chip, or a near miss of the known rot: at some of the seven addresses the
+// byte is the chip's, at others a pure 1 -> 0 loss under the mask (repaired by setting the mask bits) or
+// the dump's own pattern (repaired by the mask). Tries every combination (at most 3^7) against the
+// chip's hash. Returns the repaired addresses, or -1 if no combination gives the chip.
+int repair_sip(Image& b, std::string& how) {
+    const std::string h = sha(b);
+    if (h == kSipRepaired) return 0;
+    Image t = b;
+    int choice[7] = {};
+    std::vector<uint8_t> cand[7];
+    for (int i = 0; i < 7; i++) {
+        const auto& r = kSipRepairs[i];
+        const uint8_t u = b[size_t(r.at)];
+        cand[i] = {u};
+        if (r.pure && uint8_t(u | r.mask) != u) cand[i].push_back(uint8_t(u | r.mask));
+        if (std::find(cand[i].begin(), cand[i].end(), uint8_t(u ^ r.mask)) == cand[i].end()) cand[i].push_back(uint8_t(u ^ r.mask));
+    }
+    for (;;) {
+        for (int i = 0; i < 7; i++) t[size_t(kSipRepairs[i].at)] = cand[i][size_t(choice[i])];
+        if (sha(t) == kSipRepaired) break;
+        int i = 0;
+        while (i < 7 && ++choice[i] == int(cand[i].size())) choice[i++] = 0;
+        if (i == 7) return -1;
+    }
+    std::vector<std::string> fixed;
+    for (int i = 0; i < 7; i++)
+        if (const uint8_t was = b[size_t(kSipRepairs[i].at)], now = t[size_t(kSipRepairs[i].at)]; now != was)
+            fixed.push_back(hex3(kSipRepairs[i].at) + ((now & was) == was ? "" : " (as in the known dump)"));
+    b = t;
+    how.clear();
+    for (size_t i = 0; i < fixed.size(); i++) how += (i ? ", " : "") + fixed[i];
+    return int(fixed.size());
+}
+
+// The three images into roles (swapped files are put back by hash or contents), the SIP repaired where
+// it can be, and a note for the status line. false (and *err) when the set can't be sorted out.
+bool take_roms(const kit::RomSet& roms, qrs::Roms& out, std::string& note, std::string* err) {
+    Image img[NumRoles];
+    for (int i = 0; i < NumRoles; i++) {
+        const auto& b = roms.bytes(size_t(i));
+        if (b.size() != 2048) {
+            *err = std::string(kRoleName[i]) + ": " + std::to_string(b.size()) + " bytes; the QRS PROMs (2716) are 2048 bytes";
+            return false;
+        }
+        std::copy(b.begin(), b.end(), img[i].begin());
+    }
+    Role role[NumRoles];
+    for (int i = 0; i < NumRoles; i++) role[i] = role_of(img[i]);
+    // an unrecognised image takes its own slot's role if nothing else claims it, else the one left over
+    auto claimed = [&](int r) { return std::count(role, role + NumRoles, Role(r)); };
+    for (int i = 0; i < NumRoles; i++)
+        if (role[i] == RoleUnknown && claimed(i) == 0) role[i] = Role(i);
+    for (int i = 0; i < NumRoles; i++)
+        if (role[i] == RoleUnknown)
+            for (int r = 0; r < NumRoles; r++)
+                if (claimed(r) == 0) {
+                    role[i] = Role(r);
+                    break;
+                }
+    for (int pass = 0; pass < 2; pass++)   // two files for one role first: the likelier mistake to name
+    for (int r = 0; r < NumRoles; r++)
+        if (pass == 0 ? claimed(r) > 1 : claimed(r) == 0) {
+            std::vector<int> who;
+            for (int i = 0; i < NumRoles; i++)
+                if (role[i] == r) who.push_back(i);
+            *err = claimed(r) ? "the files in the " + std::string(kRoleName[who[0]]) + " and " + kRoleName[who[1]] +
+                                    " slots both look like the " + kRoleName[r] + " image"
+                              : std::string("no file looks like the ") + kRoleName[r] + " image";
+            return false;
+        }
+    std::vector<std::string> notes;
+    {
+        std::vector<std::string> moved;
+        for (int i = 0; i < NumRoles; i++)
+            if (role[i] != i) moved.push_back(std::string("the ") + kRoleName[role[i]] + " image was in the " + kRoleName[i] + " slot");
+        if (!moved.empty()) {
+            std::string m;
+            for (size_t i = 0; i < moved.size(); i++) m += (i ? "; " : "") + moved[i];
+            notes.push_back(m + " (taken by its contents)");
+        }
+    }
+    Image my, sip, dy;
+    for (int i = 0; i < NumRoles; i++) (role[i] == RoleMy ? my : role[i] == RoleSip ? sip : dy) = img[i];
+    if (sha(my) != kMyChip) {
+        const auto d = pages_differing(my, RoleMy);
+        std::vector<int> rooms, rest;
+        for (int pg : d) (pg < 7 ? rooms : rest).push_back(pg);
+        notes.push_back("MY U426 is not the known chip (" + (rooms.empty() ? std::string() : "room tables " + list(rooms)) +
+                        (rooms.empty() || rest.empty() ? "" : "; ") + (rest.empty() ? std::string() : "unused pages " + list(rest)) +
+                        " differ): used as it is");
+    }
+    if (sha(dy) != kDyChip)
+        notes.push_back("DY U633 is not the known chip (pages " + list(pages_differing(dy, RoleDy)) + " of 16 differ): used as it is");
+    std::string how;
+    if (sha(sip) == kSipDump) {
+        for (auto& r : kSipRepairs) sip[size_t(r.at)] ^= r.mask;
+        if (sha(sip) != kSipRepaired) {
+            *err = "the SIP repairs did not give the expected chip";
+            return false;
+        }
+        notes.push_back("SIP U508: the known dump, its 7 rotted bytes repaired at load");
+    } else if (const int n = repair_sip(sip, how); n > 0) {
+        notes.push_back("SIP U508: " + std::to_string(n) + " of the known dump's 7 rotted bytes found and repaired (" + how + ")");
+    } else if (n < 0) {
+        const auto d = pages_differing(sip, RoleSip);
+        notes.push_back("SIP U508 is not a known dump: " + std::to_string(d.size()) + " of 16 pages differ from the repaired chip (groups " +
+                        list(d) + "); used as it is");
+    }
+    out.my = my, out.sip = sip, out.dy = dy;
+    note.clear();
+    for (size_t i = 0; i < notes.size(); i++) note += (i ? ". " : "") + notes[i];
+    return true;
+}
 
 uint8_t seg(char c) {
     switch (c) {
@@ -131,28 +305,8 @@ void put(std::vector<uint8_t>& d, int at, int n, const std::string& s) {
 class QrsMachine final : public kit::Machine {
 public:
     bool boot(const kit::RomSet& roms, std::string* err) {
-        auto take = [&](int i, std::array<uint8_t, 2048>& out) {
-            const auto& b = roms.bytes(size_t(i));
-            if (b.size() != out.size()) return false;
-            std::copy(b.begin(), b.end(), out.begin());
-            return true;
-        };
         roms_ = std::make_unique<qrs::Roms>();
-        if (!take(0, roms_->my) || !take(1, roms_->sip) || !take(2, roms_->dy)) {
-            *err = "ROM images of the wrong size (2716s: 2048 bytes)";
-            return false;
-        }
-        const std::string h = kit::Sha256::of(roms_->sip.data(), roms_->sip.size());
-        if (h == kSipDump) {
-            for (auto& [at, mask] : kSipRepairs) roms_->sip[size_t(at)] ^= mask;
-            if (kit::Sha256::of(roms_->sip.data(), roms_->sip.size()) != kSipRepaired) {
-                *err = "the SIP repairs did not give the expected chip";
-                return false;
-            }
-            rom_note_ = "SIP U508: the known dump, its 7 rotted bytes repaired at load";
-        } else if (h != kSipRepaired) {
-            rom_note_ = "SIP U508 is not a known dump: used as it is";
-        }
+        if (!take_roms(roms, *roms_, rom_note_, err)) return false;
         unit_ = std::make_unique<qrs::Unit>();
         unit_->init(*roms_);
         ctl_ = ctl_for(defaults());
@@ -497,12 +651,12 @@ kit::Info QrsMachine::make_info() {
         {"polarity", "The unit sends outputs 2 and 4 inverted; this can put them back in phase."},
     });
     i.roms = {
-        {"MY U426", {2048}, {{"affdbf36b8ebe1f534741c074460df143fc4b8b3007ddf014c2a9e10f0fe946f", "card 2 (0005dbe4)"}},
+        {"MY U426", {2048}, {{kMyChip, "card 2 (0005dbe4)"}},
          {"0005dbe4", "u426"}},
         {"SIP U508", {2048},
          {{kSipDump, "card 3 (0003ce18)"}, {kSipRepaired, "card 3, repaired"}},
          {"0003ce18", "u508"}},
-        {"DY U633", {2048}, {{"2fce7e20a2f3ce18e089a663122747e54d11ae0bd1d1524521e0303ebcff799d", "card 4 (0005da61)"}},
+        {"DY U633", {2048}, {{kDyChip, "card 4 (0005da61)"}},
          {"0005da61", "u633", "u635"}},
     };
     i.about = "An emulation of a 1982 digital reverb from its schematics and ROMs. Bring your own ROM images "

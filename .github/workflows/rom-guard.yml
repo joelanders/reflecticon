@@ -1,0 +1,19 @@
+# No ROM or firmware bytes in the machine folders that must hold none: runs on every pull request and
+# push (the plugin builds run only on tags). See qrs/tests/no_rom_bytes.py for what it looks for.
+name: ROM guard
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 qrs/tests/no_rom_bytes.py qrs

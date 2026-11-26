@@ -77,7 +77,7 @@ jobs:
             cp -R "build-machines/$id/${id}_artefacts/Release/AU/$product.component" ~/Library/Audio/Plug-Ins/Components/
           done
           killall -9 AudioComponentRegistrar || true
-          for code in Rx16 Dm15 Dn78 Sg32; do auval -v aufx $code Rflx; done
+          for code in Rx16 Dm15 Dn78 Sg32 Qr82; do auval -v aufx $code Rflx; done
 
       - name: Package
         run: |

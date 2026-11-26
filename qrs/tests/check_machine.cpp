@@ -6,7 +6,11 @@
 //      freeze holds, mute clears;
 //   4. the hardware panel: layout, a [+] key, the knob, a memory recall;
 //   5. the kit's host checks (block sizes, no allocation, a change reaches the machine, instances);
-//   6. a live change while audio runs; 7. what it costs.
+//   6. a live change while audio runs; 7. what it costs;
+//   8. ROM handling, on images made at run time from the user's ROMs by flipping bits (no ROM bytes
+//      here): the dump, the chip, partial and extra rot, swapped slots, wrong size, MY/DY changes;
+//   9. behaviour: a reverb time and a room change while a tail rings, extreme settings, levels off,
+//      delays 1 and 200 ms; 10. host rates 44.1-192 kHz (latency as reported), block sizes 1-4096.
 #define KIT_COUNT_ALLOCATIONS
 #include "../plugin/qrs_machine.hpp"
 #include "../plugin/qrs_panel.hpp"
@@ -32,6 +36,12 @@ static kit::RomSet load_roms(const kit::MachineType& t, const std::string& dir) 
     return kit::recognise(t.info.roms, files);
 }
 
+static std::string fmt1(double v) {
+    char b[32];
+    std::snprintf(b, sizeof b, "%.1f", v);
+    return b;
+}
+
 enum { Room, Time, High, Low, RevDelay, RevLevel, ReflDelay, ReflLevel, Freeze, Enter, Mute, Input, Output, Outputs, Polarity };
 
 // An impulse (0.5 full scale) into the left input through a fresh host at 48 kHz: both outputs.
@@ -40,7 +50,7 @@ struct Run {
     long latency = 0;
 };
 static Run impulse(const kit::MachineType& t, const kit::RomSet& roms, kit_test::Params& p, double seconds, int at = 100,
-                   std::function<void(kit::Host&, kit_test::Params&, int)> during = nullptr) {
+                   std::function<void(kit::Host&, kit_test::Params&, int)> during = nullptr, int rate = 48000) {
     auto host = std::make_unique<kit::Host>(t, p.ptrs());
     std::string err;
     auto m = t.boot(roms, "", &err);
@@ -48,11 +58,11 @@ static Run impulse(const kit::MachineType& t, const kit::RomSet& roms, kit_test:
         std::fprintf(stderr, "boot failed: %s\n", err.c_str());
         std::exit(1);
     }
-    host->prepare(48000, 512);
+    host->prepare(rate, 512);
     host->install(std::move(m));
     Run o;
     o.latency = host->latency();
-    int total = int(seconds * 48000);
+    int total = int(seconds * rate);
     std::vector<float> in(size_t(total), 0.0f), z(size_t(total), 0.0f);
     o.l.assign(size_t(total), 0.0f), o.r.assign(size_t(total), 0.0f);
     if (at >= 0) in[size_t(at)] = 0.5f;
@@ -291,6 +301,215 @@ int main(int argc, char** argv) {
         kit_test::render(t, roms, p, 48000, 20.0, [](int) { return 512; });
         double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
         std::printf("  %.2f s of CPU on one thread: %.1fx real time\n", s, 20.0 / s);
+    }
+
+    // ---- 8. ROM handling ----
+    std::printf("8. ROM handling (images made here from yours by flipping bits)\n");
+    using Img = std::vector<uint8_t>;
+    const std::pair<int, uint8_t> rep[7] = {{0x440, 0xc8}, {0x460, 0x5f}, {0x4f0, 0x0d}, {0x540, 0xf0}, {0x560, 0x41}, {0x6ef, 0x02}, {0x7ef, 0x02}};
+    const Img my0 = roms.bytes(0), dy0 = roms.bytes(2);
+    Img chip = roms.bytes(1), dump;
+    if (roms.slots[1].label.find("repaired") == std::string::npos) {
+        dump = chip;
+        for (auto& [at, m] : rep) chip[size_t(at)] ^= m;
+    } else {
+        dump = chip;
+        for (auto& [at, m] : rep) dump[size_t(at)] ^= m;
+    }
+    auto set_of = [](const Img& a, const Img& b, const Img& c) {
+        kit::RomSet s;
+        s.slots.resize(3);
+        const Img* im[3] = {&a, &b, &c};
+        for (int i = 0; i < 3; i++) s.slots[size_t(i)] = {true, false, "synthetic", {"synthetic", "synthetic", *im[i]}};
+        return s;
+    };
+    auto boot_note = [&](const kit::RomSet& s, std::string& err) {
+        auto m = t.boot(s, "", &err);
+        if (!m) return std::string("(refused)");
+        std::vector<float> v;
+        for (auto& prm : t.info.params) v.push_back(prm.def);
+        m->set_params(v);
+        return m->readouts().status;
+    };
+    auto out_of = [&](const kit::RomSet& s) {
+        kit_test::Params p(t.info);
+        p.v[ReflLevel].store(0.0f);
+        return kit_test::render(t, s, p, 48000, 0.4, [](int) { return 512; });
+    };
+    {
+        const auto ref = out_of(set_of(my0, chip, dy0));
+        auto expect = [&](const char* what, const kit::RomSet& s, std::initializer_list<const char*> has, bool same_as_chip) {
+            std::string err;
+            const std::string note = boot_note(s, err);
+            bool ok = err.empty();
+            for (const char* h : has) ok = ok && note.find(h) != std::string::npos;
+            if (ok && same_as_chip) ok = out_of(s) == ref;
+            check(ok, std::string(what) + ": \"" + note + "\"" + (same_as_chip ? ", output = the chip's" : ""));
+        };
+        expect("the known dump", set_of(my0, dump, dy0), {"7 rotted bytes repaired"}, true);
+        expect("the repaired chip", set_of(my0, chip, dy0), {}, true);
+        {
+            std::string err;
+            check(boot_note(set_of(my0, chip, dy0), err).empty(), "  and it gives no note");
+        }
+        Img part = chip;
+        part[0x440] &= uint8_t(~0x40);   // one bit of 0x440's rot
+        part[0x6ef] &= uint8_t(~0x02);
+        part[0x540] ^= 0xf0;              // 0x540 as in the dump (not a pure loss)
+        expect("partial rot (2 pure losses, 0x540 as in the dump)", set_of(my0, part, dy0),
+               {"3 of the known dump's 7", "0x440", "0x6ef", "0x540 (as in the known dump)"}, true);
+        Img extra = chip;
+        extra[0x123] ^= 0x10;   // page 2
+        expect("the chip with a bit rotted elsewhere", set_of(my0, extra, dy0), {"not a known dump", "1 of 16 pages", "groups 2)"}, false);
+        Img dx = dump;
+        dx[0x123] ^= 0x10;
+        expect("the dump with a bit rotted elsewhere", set_of(my0, dx, dy0), {"6 of 16 pages", "groups 2, 8, 9, 10, 13 and 15"}, false);
+        expect("MY and DY in each other's slots", set_of(dy0, chip, my0), {"MY U426 image was in the DY U633 slot", "taken by its contents"}, true);
+        {
+            const auto want = out_of(set_of(my0, extra, dy0));
+            std::string err;
+            const auto s = set_of(extra, dy0, my0);   // all three moved, the SIP unknown: placed as the one left over
+            const std::string note = boot_note(s, err);
+            check(err.empty() && note.find("SIP U508 image was in the MY U426 slot") != std::string::npos && out_of(s) == want,
+                  "all three moved, the SIP not a known dump: \"" + note + "\"");
+        }
+        {
+            std::string err;
+            boot_note(set_of(dy0, chip, dy0), err);
+            check(err.find("both look like the DY U633") != std::string::npos, "two DY images: refused: \"" + err + "\"");
+            Img shortmy(my0.begin(), my0.end() - 1);
+            err.clear();
+            boot_note(set_of(shortmy, chip, dy0), err);
+            check(err.find("2047 bytes") != std::string::npos, "a 2047-byte image: refused: \"" + err + "\"");
+        }
+        Img myx = my0;
+        myx[2 * 128 + 5] ^= 0x01;
+        expect("MY with a byte changed in room 2's table", set_of(myx, chip, dy0), {"MY U426 is not the known chip (room tables 2 differ)"}, false);
+        Img dyx = dy0;
+        dyx[0x100] ^= 0x01;
+        expect("DY with a byte changed at 0x100", set_of(my0, chip, dyx), {"DY U633 is not the known chip (pages 2 of 16"}, false);
+    }
+
+    // ---- 9. behaviour ----
+    std::printf("9. behaviour\n");
+    {
+        // a reverb time change while the tail rings: the ring is kept, the coefficients switch at once
+        kit_test::Params pa(t.info), pb(t.info);
+        pa.v[Time].store(60.0f), pb.v[Time].store(60.0f);
+        auto a = impulse(t, roms, pa, 2.5);
+        auto b = impulse(t, roms, pb, 2.5, 100, [](kit::Host& h, kit_test::Params& p, int at) {
+            if (at >= 48000 && p.v[Time].load() > 50) p.v[Time].store(30.0f), h.sync();
+        });
+        const double near = 10 * std::log10(energy(b.l, 1.0, 1.03) / energy(a.l, 1.0, 1.03));
+        const double late = 10 * std::log10(energy(b.l, 2.0, 2.5) / energy(a.l, 2.0, 2.5));
+        check(near > -10, "reverb time 10 s -> 0.32 s at 1.0 s: the tail is kept (first 30 ms " + fmt1(near) +
+                              " dB, the new decay already acting)");
+        check(late < -30, "  and then dies faster (2.0-2.5 s " + fmt1(late) + " dB against no change)");
+        // a room change: the output mutes for 0.5 s (manual p 15), the memory is kept, nothing blows up
+        kit_test::Params pr(t.info);
+        pr.v[Time].store(60.0f);
+        auto r = impulse(t, roms, pr, 2.5, 100, [](kit::Host& h, kit_test::Params& p, int at) {
+            if (at >= 48000 && p.v[Room].load() < 3.5f) p.v[Room].store(4.0f), h.sync();
+        });
+        float pk = 0;
+        bool finite = true;
+        for (float x : r.l) pk = std::max(pk, std::fabs(x)), finite = finite && std::isfinite(x);
+        check(energy(r.l, 1.02, 1.5) == 0, "room 10^3 -> 10^4 m3 at 1.0 s: the output mutes for 0.5 s");
+        check(energy(r.l, 1.6, 2.0) > 0 && finite && pk < 1.0f, "  then the kept memory rings on in the new room (peak " + fmt1(20 * std::log10(pk)) + " dBFS)");
+    }
+    {
+        // extreme settings through the core at 20 kHz: 1 s of noise, then 14 s of silence
+        qrs::Roms rr, raw;
+        std::copy(my0.begin(), my0.end(), rr.my.begin()), std::copy(chip.begin(), chip.end(), rr.sip.begin()), std::copy(dy0.begin(), dy0.end(), rr.dy.begin());
+        raw = rr;
+        std::copy(dump.begin(), dump.end(), raw.sip.begin());
+        auto run = [](const qrs::Roms& R, const qrs::Settings& st, double& early, double& late, double& clip) {
+            auto core = std::make_unique<qrs::Core>();
+            core->init(R);
+            core->set(st);
+            uint32_t seed = 1;
+            early = late = 0;
+            long nclip = 0, nlate = 0;
+            for (int i = 0; i < 15 * 20000; i++) {
+                seed = seed * 1664525u + 1013904223u;
+                const int x = i < 20000 ? int(seed >> 16) % 8000 - 4000 : 0;
+                int dac[4];
+                core->frame(x, -x, dac);
+                const int d1 = -dac[1] - 1;   // output 2 leaves one's-complement inverted: 0 is -1
+                const double e = double(dac[0]) * dac[0] + double(d1) * d1;
+                if (i >= 20000 && i < 3 * 20000) early += e;
+                if (i >= 13 * 20000) late += e, nlate++, nclip += std::abs(dac[0]) >= 32000;
+            }
+            clip = double(nclip) / double(nlate);
+        };
+        auto settings = [](int room, int r, int low, int high, int revdb, int refldb, int revms = 1, int reflms = 1) {
+            int rec[8];
+            qrs::panel_record(rec, room, r, low, high, revms, reflms, revdb, refldb);
+            return qrs::record_settings(rec);
+        };
+        for (int rawsip = 0; rawsip < 2; rawsip++)
+            for (auto [lo, hi] : {std::pair{5, 2}, std::pair{-5, -5}, std::pair{0, 0}}) {
+                double e, l, c;
+                run(rawsip ? raw : rr, settings(6, 80, lo, hi, 0, -99), e, l, c);
+                const double ratio = 10 * std::log10((l + 1) / (e + 1));
+                check(e > 0 && ratio < 0 && c < 0.001, std::string("10^6 m3, 100 s, LOW ") + std::to_string(lo) + " HIGH " + std::to_string(hi) +
+                                                           (rawsip ? ", SIP as dumped" : ", SIP repaired") + ": 13-15 s is " + fmt1(ratio) +
+                                                           " dB against 1-3 s (no growth)");
+            }
+        {
+            double e, l, c;
+            run(rr, settings(0, 20, -5, -5, 0, -99), e, l, c);
+            const double rms = std::sqrt(l / (2 * 2 * 20000.0));
+            check(e > 0 && rms < 1.0, "1 m3, 0.1 s, LOW and HIGH 0.1: dies away to " + fmt1(rms) +
+                                          " LSB rms (the floor rounding's idle pattern)");
+        }
+        // the SIP's HIGH / LOW registers at their 4-bit limits (the panel reaches -5..+2 / -5..+5): reported
+        for (auto [l4, h4] : {std::pair{7, 7}, std::pair{8, 8}, std::pair{7, 8}, std::pair{8, 7}}) {
+            qrs::Settings st = settings(6, 80, 0, 0, 0, -99);
+            st.l = l4, st.h = h4;
+            double e, l, c;
+            run(rr, st, e, l, c);
+            std::printf("    registers L %+d H %+d (beyond the panel): 13-15 s %s dB against 1-3 s, %.1f %% at full scale\n",
+                        l4 > 7 ? l4 - 16 : l4, h4 > 7 ? h4 - 16 : h4, fmt1(10 * std::log10((l + 1) / (e + 1))).c_str(), 100 * c);
+        }
+        {
+            double e, l, c;
+            run(rr, settings(3, 60, 0, 0, -99, -99), e, l, c);
+            check(e == 0 && l == 0, "reverb and 1st reflection both off: outputs 1 and 2 silent (output 2 at its inverted zero)");
+        }
+    }
+    {
+        kit_test::Params p1(t.info), p200(t.info);
+        for (auto* p : {&p1, &p200}) p->v[RevLevel].store(float(-31)), p->v[ReflLevel].store(0.0f);
+        p1.v[ReflDelay].store(1.0f), p200.v[ReflDelay].store(200.0f);
+        auto a = impulse(t, roms, p1, 0.5), b = impulse(t, roms, p200, 0.5);
+        const double ta = (onset(a.r) - 100 - a.latency) / 48.0, tb = (onset(b.r) - 100 - b.latency) / 48.0;
+        check(std::fabs(tb - ta - 199.0) < 0.1, "1st reflection 1 ms -> 200 ms: onsets " + fmt1(ta) + " and " + fmt1(tb) + " ms after the latency");
+    }
+
+    // ---- 10. host rates and block sizes ----
+    std::printf("10. host rates and block sizes\n");
+    {
+        std::vector<double> at;
+        for (int rate : {44100, 48000, 88200, 96000, 192000}) {
+            kit_test::Params p(t.info);
+            p.v[RevLevel].store(float(-31)), p.v[ReflLevel].store(0.0f), p.v[ReflDelay].store(10.0f);
+            auto o = impulse(t, roms, p, 0.2, 100, nullptr, rate);
+            const double ms = (onset(o.r) - 100 - o.latency) * 1000.0 / rate;
+            at.push_back(ms);
+            std::printf("    %6d Hz: latency %ld samples, 1st reflection (10 ms) %.3f ms after it\n", rate, o.latency, ms);
+        }
+        const double spread = *std::max_element(at.begin(), at.end()) - *std::min_element(at.begin(), at.end());
+        check(spread < 1000.0 / 44100 + 0.02, "the reported latency is the bridge's at every rate: onsets agree within " + fmt1(spread * 1000) + " us");
+    }
+    {
+        kit_test::Params pa(t.info), pb(t.info), pc(t.info), pd(t.info);
+        auto a = kit_test::render(t, roms, pa, 48000, 0.5, [](int) { return 512; }, nullptr, 4096);
+        auto b = kit_test::render(t, roms, pb, 48000, 0.5, [](int) { return 1; }, nullptr, 4096);
+        auto c = kit_test::render(t, roms, pc, 48000, 0.5, [](int) { return 4096; }, nullptr, 4096);
+        std::mt19937 bs(3);
+        auto d = kit_test::render(t, roms, pd, 48000, 0.5, [&](int) { return int(bs() % 4096) + 1; }, nullptr, 4096);
+        check(a == b && a == c && a == d, "blocks of 1, 4096 and random 1-4096 = 512-sample blocks, bit for bit");
     }
 
     std::printf(fails ? "\n%d FAILED\n" : "\nall passed\n", fails);
