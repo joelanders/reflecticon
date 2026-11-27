@@ -50,6 +50,12 @@ Checked 2026-11-18 (hardware panel, Chromium pane): RMX16 PROGRAM 3 # from a mou
 keyboard shows HALL B3 and the page adopts program 3 (easy mode then shows it); DMX A 3 0 0 # from
 the keyboard shows 300 and is adopted as Delay A; a dragged regen knob moves the parameter; the
 h/room LEDs follow the drum loop; no console errors.
+Checked 2026-11-27 (QRS, Chromium pane): the three PROMs are sorted into their slots from five
+dropped files; the drum loop plays (-8 dB); ROOM SIZE + by mouse, the knob dragged, `*` 8 6 by mouse
+and `*` 7 3 by key events load the factory programs, and the page adopts them; FREEZE lights its LED
+and the page shows it; ROMs and settings survive a reload; no sideways scroll at 375 px; no console
+errors. This check found the meters timing their fall with `steady_clock`, which needs `performance`,
+missing in an AudioWorklet (Node has it, so the Node check had passed).
 
 - Not checked: Safari/iOS and Firefox, a real phone, the microphone and audio-file sources, long
   runs for dropouts. Output is not compared sample by sample with the native build (wasm's libm can

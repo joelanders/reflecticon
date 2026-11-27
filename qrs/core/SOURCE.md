@@ -84,6 +84,8 @@ in C++ and was gate-checked in the project against the COP's own microcode.
 - **Saved state:** the editor shot's state round trip gives the same panel.
 - **Validation:** auval `aufx Qr82 Rflx` passed; pluginval at strictness 10 on the VST3 (GUI tests
   skipped): SUCCESS.
+- **In a browser** (2026-11-27, Chromium): it boots from dropped files and plays; keys, the knob, memory
+  recall and FREEZE work, and the page follows the panel (`web/README.md`).
 - **Speed:** the web module boots in Node with 14 presets at 53x real time; the plugin runs at 68x
   real time on one thread (M-series Mac).
 

@@ -6,7 +6,6 @@
 #include "../../shared/core/sha256.hpp"
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -438,10 +437,9 @@ public:
         s.digits[DigitLoc] = seg(char('0' + loc_));
         s.leds.assign(NumQrsLeds, 0);
         s.leds[LedFreeze] = c.s.freeze ? 255 : 0;
-        // the meters: peak since the last look, falling 20 dB/s; 0 dB = 12 dB below full scale
-        const auto now = Clock::now();
-        const float dt = meter_at_ == Clock::time_point{} ? 0.0f : std::chrono::duration<float>(now - meter_at_).count();
-        meter_at_ = now;
+        // the meters: peak since the last look, falling 20 dB/s of audio processed (no wall clock: the
+        // web worklet has none); 0 dB = 12 dB below full scale
+        const float dt = float(meter_frames_.exchange(0, std::memory_order_relaxed) / qrs::FS4);
         static const float thr[NumMeterLeds] = {-0.2f, -2, -6, -12, -24, -36, -48, -60, -72, -84};   // dBFS
         for (int b = 0; b < 6; b++) {
             const float pk = meter_[b].exchange(0.0f, std::memory_order_relaxed);
@@ -478,6 +476,7 @@ public:
         const Ctl& k = cur_;
         float pk[6] = {};
         long& mute = mute_left_;
+        long frames = 0;
         bridge_.process(in, out_l, out_r, n, [&](const float* const* x, float* l, float* r, int count) {
             for (int i = 0; i < count; i++) {
                 const double xl = x[0][i] * k.in_gain, xr = x[1][i] * k.in_gain;
@@ -497,7 +496,9 @@ public:
                 l[i] = float(a * g);
                 r[i] = float(b * g);
             }
+            frames += count;
         });
+        meter_frames_.fetch_add(frames, std::memory_order_relaxed);
         for (int b = 0; b < 6; b++) {
             float was = meter_[b].load(std::memory_order_relaxed);
             while (pk[b] > was && !meter_[b].compare_exchange_weak(was, pk[b], std::memory_order_relaxed)) {}
@@ -541,7 +542,7 @@ private:
             const int room = idx(v[Room], 6);
             x = std::clamp(time_r(v) + dir, qrs::RT_FLOOR[room], qrs::RT_CEILING[room]);
         } else {
-            const auto& prm = make_info().params[size_t(hp)];
+            const auto& prm = qrsplug::machine_type().info.params[size_t(hp)];
             x = std::clamp(x + dir, int(prm.min), int(prm.max));
         }
         set_from_panel(hp, float(x));
@@ -569,7 +570,6 @@ private:
     bool mute_held_ = false;
 
     // the panel (control thread)
-    using Clock = std::chrono::steady_clock;
     static constexpr float kKnobSteps = 60.0f;   // steps per full turn of the drawn knob
     mutable std::map<int, float> pending_;
     mutable uint32_t adopt_serial_ = 0;
@@ -578,7 +578,7 @@ private:
     float knob_at_ = 0.5f, knob_acc_ = 0;
     int file_ = 7, loc_ = 1;
     bool star_ = false;
-    mutable Clock::time_point meter_at_;
+    mutable std::atomic<long> meter_frames_{0};   // 80 kHz frames since the panel last looked
     mutable float meter_db_[6] = {-120, -120, -120, -120, -120, -120};
     mutable std::atomic<float> meter_[6] = {};
 };
