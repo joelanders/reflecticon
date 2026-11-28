@@ -49,7 +49,12 @@ in C++ and was gate-checked in the project against the COP's own microcode.
   end is a bilinear filter plus a 24-tap FIR fitted to the analogue cascade (within −0.31..+0.01 dB,
   phase within 1.5°, up to 10 kHz). Its words can differ from the project's continuous-time model
   near the law's steps: 0.25 % rms of the output on noise.
-- **Not compared with a real unit.** No recordings of a QRS against known settings were available.
+- **Against a real unit: one recording.** A YouTube demo of a QRS playing factory program file 7
+  location 8 (45 s, room 6, HIGH 0.1) ends in about 65 s of free tail. Its octave-band decay, 250 Hz
+  to 4 kHz, matches the model's within about 5 % over the first 30 dB. Three 10 dB steps are 19-25 %
+  slower on the real unit. It shows the same two slopes, and its tail stops near 8-9 kHz, as the
+  converters' filters predict. That is one program on one unit through a lossy codec (project note
+  `notes/2026-11-28-0113-youtube-references.md`).
 
 ## Checked (2026-11-26, `qrs_check_machine` against the user's PROM images)
 
@@ -91,12 +96,12 @@ in C++ and was gate-checked in the project against the COP's own microcode.
 
 ## Known differences and open questions
 
-- **Not compared with a real unit.** Every check is against the project's gate-level simulation of
-  the schematics and ROMs.
+- **Hardly compared with a real unit.** Apart from that one tail, every check is against the
+  project's gate-level simulation of the schematics and ROMs.
 - **8 kHz response:** XLR in to XLR out is -5.9 dB at 8 kHz in the model; the manual's specification
   says -3 dB (the project's note 2026-11-18-0129).
-- **Reverb time:** the model's reverb time has an offset, and rooms 4-6 decay in two slopes. Both are
-  open in the project. Separately, the short programs (0.16-0.4 s, rooms 0 and 2) measure about 25 %
+- **Reverb time:** rooms 4-6 decay in two slopes; the real unit's recorded room-6 tail has them too.
+  The model's reverb-time offset is open in the project. Separately, the short programs (0.16-0.4 s, rooms 0 and 2) measure about 25 %
   shorter than their labels at 1 kHz.
 - **Reflection routing:** input L's reflection on output 2 follows the manual (p 42), not a traced
   backplane. It reaches outputs 1 / 2 only. The Outputs parameter picks 1 / 2, 3 / 4 (reverb only) or
