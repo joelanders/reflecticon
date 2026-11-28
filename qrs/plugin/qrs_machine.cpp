@@ -1,13 +1,16 @@
 #include "qrs_machine.hpp"
 #include "qrs_panel.hpp"
 #include "../core/qrs.hpp"
+#include "../core/cop_panel.hpp"
 #include "../../shared/core/mailbox.hpp"
 #include "../../shared/core/rate_bridge.hpp"
 #include "../../shared/core/sha256.hpp"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <memory>
 
@@ -21,6 +24,8 @@ enum P { Room, Time, High, Low, RevDelay, RevLevel, ReflDelay, ReflLevel, Freeze
 constexpr int kLevelOff = -31;         // the level parameters' OFF step (below -30 dB)
 constexpr double kMuteSeconds = 0.5;   // room-size change: "mutes the reverb signal for 0.5 s" (manual p 15);
                                        // MUTE "briefly" (p 23): taken as the same
+constexpr double kKillSeconds = 0.45;  // the COP's Kill one-shot (U341: 0.45 R C), fired by a memory recall,
+                                       // a room-size key or MUTE
 
 // The panel's HIGH END / LOW END steps: factor 10^(k/5), k = index - 5 (LIN = 1)
 const char* const kFactor[11] = {"0.1", "0.16", "0.25", "0.4", "0.63", "LIN", "1.6", "2.5", "4", "6.3", "10"};
@@ -55,6 +60,9 @@ struct Ctl {   // control -> audio
     bool invert24 = true;
     uint32_t mute_serial = 0;
     uint32_t recall_serial = 0;   // a memory recall from the panel: clears the reverb, as MUTE does
+    uint32_t kill_serial = 0;     // the COP's Kill one-shot fired: clear the reverb, mute for its 0.45 s
+    bool cop_enter = false;       // the COP's Enter one-shot: the input open in FREEZE
+    bool cop = false;             // the COP panel is in use
 };
 
 // The factory programs, files 7 ("Loudspeakers") and 8 ("Headphones"), locations 2-8 (manual p 46): HIGH,
@@ -98,6 +106,10 @@ const char* const kDyChip = "2fce7e20a2f3ce18e089a663122747e54d11ae0bd1d1524521e
 // mask); 0x540 is not (the dump has a 1 under its mask), so only the dump's own pattern repairs it.
 const char* const kSipDump = "e1f39c97025361c5a8a434a1740208d413a4c2e570ac1d0cfd9bae54655acf33";
 const char* const kSipRepaired = "72954733778de7ff01498dc3520502a5ddc5487614e183a245b050f3e8e8df0d";
+// the controller's PROMs (card 1), optional: with them the panel is the unit's own (COP + panel boards)
+const char* const kCopDisplay = "b778a17a0f939ebe0a83c412f70a106dcaebf3b8d3db228da6412fa6e8f270cd";     // U308
+const char* const kCopMicrocode = "d37aaea5bba06fc0e46c91b958aa86c0405c8ab7be4510fcaa436ca159e581b0";   // U309
+enum { SlotCop308 = 3, SlotCop309 = 4 };
 struct Repair {
     int at;
     uint8_t mask;
@@ -304,7 +316,7 @@ void put(std::vector<uint8_t>& d, int at, int n, const std::string& s) {
 
 class QrsMachine final : public kit::Machine {
 public:
-    bool boot(const kit::RomSet& roms, std::string* err) {
+    bool boot(const kit::RomSet& roms, const std::string& state, std::string* err) {
         roms_ = std::make_unique<qrs::Roms>();
         if (!take_roms(roms, *roms_, rom_note_, err)) return false;
         unit_ = std::make_unique<qrs::Unit>();
@@ -313,7 +325,21 @@ public:
         unit_->set(ctl_.s);
         unit_->set_crossover(true);   // the manual's routing: input L's 1st reflection on output 2 (p 42)
         cur_ = ctl_;
+        if (roms.slots.size() > SlotCop309 && roms.slots[SlotCop308].found && roms.slots[SlotCop309].found)
+            if (!boot_cop(roms, state, err)) return false;
         return true;
+    }
+
+    // The battery RAM (with the COP panel): "QRSCOP1", the 512 RAM bytes, the file and location shown.
+    std::string state() const override {
+        if (!cop_) return {};
+        uint8_t ram[512];
+        cop_->save_ram(ram);
+        std::string s = kStateTag;
+        s.append(reinterpret_cast<const char*>(ram), sizeof ram);
+        s += char(cop_->file());
+        s += char(cop_->loc());
+        return s;
     }
 
     void prepare(int host_rate, int max_block) override {
@@ -330,10 +356,15 @@ public:
         mute_held_ = v[Mute] > 0.5f;
         c.mute_serial = mute_serial_;
         c.recall_serial = recall_serial_;
+        c.kill_serial = kill_serial_;
+        c.cop_enter = cop_enter_;
+        c.cop = cop_ != nullptr;
+        if (c.cop_enter) c.s.input_on = true;
         ctl_ = c;
         ctls_.post(c);
         for (auto it = pending_.begin(); it != pending_.end();)   // the host has taken a panel setting
             it = std::abs(v_[size_t(it->first)] - it->second) < 1e-4f ? pending_.erase(it) : std::next(it);
+        if (cop_) cop_from_host();
     }
 
     kit::Readouts readouts() const override {
@@ -364,7 +395,7 @@ public:
         o.panel = std::string(kRoomShown[room]) + " m3  " + rt_text(r, true) + " s  high " + kFactor[hi] + "  low " +
                   kFactor[lo] + "  reverb " + o.param[RevDelay] + " " + o.param[RevLevel] + "  1st refl " +
                   o.param[ReflDelay] + " " + o.param[ReflLevel] + (s.freeze ? "  FREEZE" : "");
-        o.status = rom_note_;
+        o.status = rom_note_.empty() ? cop_note_ : cop_note_.empty() ? rom_note_ : rom_note_ + ". " + cop_note_;
         return o;
     }
 
@@ -382,6 +413,14 @@ public:
     // ---- hardware panel ----
     void panel_key(int id, bool down) override {
         if (v_.size() < NumParams) return;
+        if (cop_) {   // the unit's own panel: the key's switch, held for at least 30 ms of machine time
+            const int s = cop_switch(id);
+            if (!s) return;
+            pump(0);
+            cop_->key(s, down);
+            pump(long((down ? 0.030 : 0.010) * qrs::CopPanel::kCountsPerSecond));
+            return;
+        }
         if (id >= 1 && id <= 2 * NumPanelParams) {
             if (!down) return;
             const int p = (id - 1) / 2;
@@ -395,8 +434,11 @@ public:
         if (id == KeyStar && down) star_ = !star_;
         if (id >= KeyMem1 && id < KeyMem1 + 8 && down) {
             const int n = id - KeyMem1 + 1;
-            if (star_) file_ = n, star_ = false;
-            else loc_ = n;
+            if (star_) {   // File mode (as the COP: "*" toggles it; a digit picks the file, LOC back to 1)
+                file_ = n, loc_ = 1;
+                return;
+            }
+            loc_ = n;
             for (const Factory& f : kFactory)
                 if (f.file == file_ && f.loc == loc_) {
                     const auto vals = factory_values(f);
@@ -420,6 +462,10 @@ public:
         }
         knob_acc_ += (value - knob_at_) * kKnobSteps;
         knob_at_ = value;
+        if (cop_) {   // detents as the knob's contacts give them, a few per event (the rest in panel())
+            turn_cop_knob(kKnobDetentsPerCall);
+            return;
+        }
         while (knob_acc_ >= 1.0f) step(knob_, +1), knob_acc_ -= 1.0f;
         while (knob_acc_ <= -1.0f) step(knob_, -1), knob_acc_ += 1.0f;
     }
@@ -428,23 +474,27 @@ public:
         kit::PanelState s;
         if (v_.size() < NumParams || !unit_) return s;
         s.valid = true;
-        std::vector<float> v = v_;
-        for (auto& [i, x] : pending_) v[size_t(i)] = x;
-        const Ctl c = ctl_for(v);
         s.digits.assign(NumQrsDigits, 0);
-        auto lvl = [](int k) { return k == 0 ? std::string("OFF") : "-" + std::to_string(31 - k); };
-        put(s.digits, 3 * PReflDelay, 3, std::to_string(c.s.refl_delay + 1));
-        put(s.digits, 3 * PReflLevel, 3, lvl(c.s.refl_level));
-        put(s.digits, 3 * PRevDelay, 3, std::to_string(c.s.rev_delay + 1));
-        put(s.digits, 3 * PRevLevel, 3, lvl(c.s.rev_level));
-        put(s.digits, 3 * PHigh, 3, kFactor[idx(v[High], 7)]);
-        put(s.digits, 3 * PTime, 3, rt_text(time_r(v), true));
-        put(s.digits, 3 * PLow, 3, kFactor[idx(v[Low], 10)]);
-        put(s.digits, 3 * PRoom, 3, kRoomShown[c.s.room]);
-        s.digits[DigitFile] = uint8_t(seg(char('0' + file_)) | (star_ ? 0x80 : 0));
-        s.digits[DigitLoc] = seg(char('0' + loc_));
         s.leds.assign(NumQrsLeds, 0);
-        s.leds[LedFreeze] = c.s.freeze ? 255 : 0;
+        if (cop_) {
+            const_cast<QrsMachine*>(this)->cop_panel(s);
+        } else {
+            std::vector<float> v = v_;
+            for (auto& [i, x] : pending_) v[size_t(i)] = x;
+            const Ctl c = ctl_for(v);
+            auto lvl = [](int k) { return k == 0 ? std::string("OFF") : "-" + std::to_string(31 - k); };
+            put(s.digits, 3 * PReflDelay, 3, std::to_string(c.s.refl_delay + 1));
+            put(s.digits, 3 * PReflLevel, 3, lvl(c.s.refl_level));
+            put(s.digits, 3 * PRevDelay, 3, std::to_string(c.s.rev_delay + 1));
+            put(s.digits, 3 * PRevLevel, 3, lvl(c.s.rev_level));
+            put(s.digits, 3 * PHigh, 3, kFactor[idx(v[High], 7)]);
+            put(s.digits, 3 * PTime, 3, rt_text(time_r(v), true));
+            put(s.digits, 3 * PLow, 3, kFactor[idx(v[Low], 10)]);
+            put(s.digits, 3 * PRoom, 3, kRoomShown[c.s.room]);
+            s.digits[DigitFile] = uint8_t(seg(char('0' + file_)) | (star_ ? 0x80 : 0));
+            s.digits[DigitLoc] = seg(char('0' + loc_));
+            s.leds[LedFreeze] = c.s.freeze ? 255 : 0;
+        }
         // the meters: peak since the last look, falling 20 dB/s of audio processed (no wall clock: the
         // web worklet has none); 0 dB = 12 dB below full scale
         const float dt = float(meter_frames_.exchange(0, std::memory_order_relaxed) / qrs::FS4);
@@ -472,10 +522,17 @@ public:
         }
         Ctl c;
         if (ctls_.take(c)) {
-            if (c.s.room != cur_.s.room) mute_left_ = long(kMuteSeconds * qrs::FS4);
+            // with the COP panel a room-size key fires Kill (below); a room change from the host mutes as
+            // the unit's would have, for Kill's 0.45 s
+            const long room_mute = long((c.cop ? kKillSeconds : kMuteSeconds) * qrs::FS4);
+            if (c.s.room != cur_.s.room) mute_left_ = std::max(mute_left_, room_mute);
             if (c.mute_serial != cur_.mute_serial || c.recall_serial != cur_.recall_serial) {
                 unit_->clear();
                 mute_left_ = long(kMuteSeconds * qrs::FS4);
+            }
+            if (c.kill_serial != cur_.kill_serial) {   // Kill: the memory cleared, the output muted
+                unit_->clear();
+                mute_left_ = std::max(mute_left_, long(kKillSeconds * qrs::FS4));
             }
             unit_->set(c.s);
             cur_ = c;
@@ -507,6 +564,7 @@ public:
             frames += count;
         });
         meter_frames_.fetch_add(frames, std::memory_order_relaxed);
+        audio_frames_.fetch_add(frames, std::memory_order_relaxed);
         for (int b = 0; b < 6; b++) {
             float was = meter_[b].load(std::memory_order_relaxed);
             while (pk[b] > was && !meter_[b].compare_exchange_weak(was, pk[b], std::memory_order_relaxed)) {}
@@ -522,13 +580,31 @@ private:
         return std::clamp(int(std::lround(v[Time])), qrs::RT_FLOOR[room], qrs::RT_CEILING[room]);
     }
     static std::string level_text(int k) { return k == 0 ? std::string("off") : fmt("%.0f dB", k - 31.0); }
-    static Ctl ctl_for(const std::vector<float>& v) {
-        const int room = idx(v[Room], 6);
+    // the eight panel parameters as the stored program (the COP's page record)
+    static void record_of(const std::vector<float>& v, int rec[8]) {
         auto lvl = [](float x) { return int(std::lround(x)) <= kLevelOff ? -99 : std::clamp(int(std::lround(x)), -30, 0); };
-        int rec[8];
-        qrs::panel_record(rec, room, time_r(v), idx(v[Low], 10) - 5, idx(v[High], 7) - 5,
+        qrs::panel_record(rec, idx(v[Room], 6), time_r(v), idx(v[Low], 10) - 5, idx(v[High], 7) - 5,
                           std::clamp(int(std::lround(v[RevDelay])), 1, 200), std::clamp(int(std::lround(v[ReflDelay])), 1, 200),
                           lvl(v[RevLevel]), lvl(v[ReflLevel]));
+    }
+    // ... and back (the panel's ranges, clamped: a page the COP never wrote can hold anything)
+    static std::array<float, 8> values_of(const int rec[8]) {
+        std::array<float, 8> v;
+        auto lvl = [](int b) { return b <= 0x60 ? float(kLevelOff) : float(std::clamp(b - 0x7f, -30, 0)); };
+        auto dly = [](int b) { return float(std::clamp((b - 0x80) & 255, 1, 200)); };
+        v[Room] = float(std::clamp(rec[7], 0, 6));
+        v[Time] = float(std::clamp(rec[6], 20, 80));
+        v[High] = float(std::clamp(rec[5] - 0x60 + 5, 0, 7));
+        v[Low] = float(std::clamp(rec[4] - 0x60 + 5, 0, 10));
+        v[RevDelay] = dly(rec[3]);
+        v[ReflDelay] = dly(rec[2]);
+        v[RevLevel] = lvl(rec[1]);
+        v[ReflLevel] = lvl(rec[0]);
+        return v;
+    }
+    static Ctl ctl_for(const std::vector<float>& v) {
+        int rec[8];
+        record_of(v, rec);
         Ctl c;
         c.s = qrs::record_settings(rec);
         c.s.freeze = v[Freeze] > 0.5f;
@@ -563,6 +639,172 @@ private:
         auto it = pending_.find(param);
         return it != pending_.end() ? it->second : v_[size_t(param)];
     }
+
+    // ---- the COP panel (control thread) ----
+    // The controller and panel boards run in machine time that follows the audio processed (64 COP
+    // counts per 80 kHz frame), pumped from panel() and the key and knob handlers. Their page record and
+    // Freeze become host parameters (adopted like the hand panel's); host changes go into the page, as
+    // an edit on the unit does (location 1, the edit buffer). Kill and Enter go to the audio thread.
+    bool boot_cop(const kit::RomSet& roms, const std::string& state, std::string* err) {
+        for (int i = 0; i < 2; i++) {
+            const auto& b = roms.bytes(size_t(SlotCop308 + i));
+            if (b.size() != 2048) {
+                *err = std::string(i ? "COP U309" : "COP U308") + ": " + std::to_string(b.size()) + " bytes; the COP PROMs (2716) are 2048 bytes";
+                return false;
+            }
+            std::copy(b.begin(), b.end(), cop_rom_[i].begin());
+        }
+        if (sha(cop_rom_[0]) == kCopMicrocode && sha(cop_rom_[1]) == kCopDisplay) std::swap(cop_rom_[0], cop_rom_[1]);
+        cop_ = std::make_unique<qrs::CopPanel>();
+        cop_->boot(cop_rom_[0].data(), cop_rom_[1].data());
+        const size_t want = std::strlen(kStateTag) + 512 + 2;
+        if (state.size() == want && state.compare(0, std::strlen(kStateTag), kStateTag) == 0) {
+            const auto* p = reinterpret_cast<const uint8_t*>(state.data()) + std::strlen(kStateTag);
+            cop_->load_ram(p);
+            cop_->set_location(std::clamp(int(p[512]), 1, 8), std::clamp(int(p[513]), 1, 8));
+        } else {   // a new unit: every page the plugin's defaults, the factory programs in files 7 and 8
+            int rec[8];
+            record_of(defaults(), rec);
+            for (int pg = 0; pg < 64; pg++) cop_->write_page(pg, rec);
+            for (const Factory& f : kFactory) {
+                const auto v = factory_values(f);
+                record_of(v, rec);
+                cop_->write_page(qrs::CopPanel::page_of(f.file, f.loc), rec);
+            }
+            cop_->set_location(7, 1);
+        }
+        {   // the COP has held an empty RAM's room (or another page's) until now: the page again
+            int keep[8];
+            cop_->read_page(cop_->page(), keep);
+            cop_->write_program(cop_->page(), keep);
+        }
+        cop_->read_page(cop_->page(), seen_rec_);
+        seen_freeze_ = cop_->freeze();
+        kill_seen_ = cop_->kill();
+        std::string n;
+        if (sha(cop_rom_[0]) != kCopDisplay) n += "COP U308 is not the known chip: used as it is. ";
+        if (sha(cop_rom_[1]) != kCopMicrocode) n += "COP U309 is not the known chip: used as it is. ";
+        cop_note_ = n + "Panel: the unit's controller and panel boards (gate level)";
+        ctl_.cop = cur_.cop = true;
+        return true;
+    }
+
+    // a panel key's switch (S101..S130), 0 for none (power)
+    static int cop_switch(int id) {
+        static const int minus[NumPanelParams] = {126, 125, 124, 123, 118, 117, 116, 115};
+        static const int plus[NumPanelParams] = {122, 121, 120, 119, 114, 113, 112, 111};
+        static const int mem[8] = {105, 106, 107, 108, 104, 103, 102, 101};   // digits 1-8
+        if (id >= 1 && id <= 2 * NumPanelParams) return id % 2 ? minus[(id - 1) / 2] : plus[(id - 1) / 2];
+        if (id >= KeyMem1 && id < KeyMem1 + 8) return mem[id - KeyMem1];
+        switch (id) {
+            case KeyEnter: return 130;
+            case KeyMute: return 129;
+            case KeyFreeze: return 128;
+            case KeyEnhance: return 127;
+            case KeyStar: return 110;
+            case KeyEquals: return 109;
+            default: return 0;
+        }
+    }
+
+    // Run the machine up to the audio's time, or at least `min_counts`; at most kCopMaxLag at a time
+    // (time beyond that is dropped: a host that stopped the audio, or a panel not looked at).
+    void pump(long min_counts) {
+        const long long audio = audio_frames_.load(std::memory_order_relaxed) * kCountsPerFrame + cop_offset_;
+        long long want = std::max<long long>(audio - cop_->now(), min_counts);
+        const long long cap = (long long)(kCopMaxLag * qrs::CopPanel::kCountsPerSecond);
+        if (want > cap) cop_offset_ -= want - cap, want = cap;
+        const long long half = (long long)(kBlinkHalf * qrs::CopPanel::kCountsPerSecond);
+        while (want > 0) {
+            const long n = long(std::min<long long>(want, kCopSlice));
+            cop_->blink(cop_->now() / half % 2 == 0);
+            cop_->run(n);
+            want -= n;
+            const bool k = cop_->kill(), e = cop_->enter();
+            if ((k && !kill_seen_) || e != cop_enter_) {
+                if (k && !kill_seen_) kill_serial_++;
+                cop_enter_ = e;
+                ctl_.kill_serial = kill_serial_;
+                ctl_.cop_enter = e;
+                ctl_.s.input_on = !ctl_.s.freeze || v_[Enter] > 0.5f || e;
+                ctls_.post(ctl_);
+            }
+            kill_seen_ = k;
+        }
+        take_cop();
+    }
+
+    // the page record and Freeze, where the machine changed them, as panel settings for the host
+    void take_cop() {
+        int rec[8];
+        cop_->read_page(cop_->page(), rec);
+        if (!std::equal(rec, rec + 8, seen_rec_)) {
+            std::copy(rec, rec + 8, seen_rec_);
+            const auto v = values_of(rec);
+            for (int i = 0; i < 8; i++)
+                if (std::abs(cur(i) - v[size_t(i)]) > 1e-4f) set_from_panel(i, v[size_t(i)]);
+        }
+        if (cop_->freeze() != seen_freeze_) {
+            seen_freeze_ = cop_->freeze();
+            if ((cur(Freeze) > 0.5f) != seen_freeze_) set_from_panel(Freeze, seen_freeze_ ? 1.0f : 0.0f);
+        }
+    }
+
+    // host values (with the panel's not yet taken) into the machine: an edit lands in location 1
+    void cop_from_host() {
+        std::vector<float> v = v_;
+        for (auto& [i, x] : pending_) v[size_t(i)] = x;
+        int rec[8], now[8];
+        record_of(v, rec);
+        cop_->read_page(cop_->page(), now);
+        {   // compared as the panel's values (a page can hold bytes outside the panel's ranges)
+            const auto nv = values_of(now);
+            std::vector<float> w = v;
+            std::copy(nv.begin(), nv.end(), w.begin());
+            record_of(w, now);
+        }
+        if (!std::equal(rec, rec + 8, now)) {
+            if (cop_->loc() != 1) cop_->set_location(cop_->file(), 1);
+            cop_->write_program(cop_->page(), rec);
+            cop_->read_page(cop_->page(), seen_rec_);
+        }
+        const bool fz = v[Freeze] > 0.5f;
+        if (fz != cop_->freeze()) cop_->set_freeze(fz);
+        seen_freeze_ = fz;
+    }
+
+    // up to `max` knob detents from knob_acc_, each the contacts' quadrature cycle at kKnobPhase a phase
+    void turn_cop_knob(int max) {
+        static const bool up[4][2] = {{1, 0}, {1, 1}, {0, 1}, {0, 0}}, dn[4][2] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
+        const long phase = long(kKnobPhase * qrs::CopPanel::kCountsPerSecond);
+        for (int k = 0; k < max && std::abs(knob_acc_) >= 1.0f; k++) {
+            const bool u = knob_acc_ > 0;
+            knob_acc_ += u ? -1.0f : 1.0f;
+            pump(0);
+            for (auto& ph : u ? up : dn) {
+                cop_->knob(ph[0], ph[1]);
+                pump(phase);
+            }
+        }
+    }
+
+    // the panel as the machine shows it
+    void cop_panel(kit::PanelState& s) {
+        pump(0);
+        turn_cop_knob(kKnobDetentsPerCall);
+        uint8_t d[32];
+        cop_->scan_digits(d);
+        // scan positions of each display's digits, left to right (QrsPanelParam order)
+        static const int at[NumPanelParams][3] = {{27, 26, 25}, {19, 18, 17}, {31, 30, 29}, {23, 22, 21},
+                                                  {7, 6, 5}, {11, 10, 9}, {3, 2, 1}, {15, 14, 13}};
+        for (int p = 0; p < NumPanelParams; p++)
+            for (int j = 0; j < 3; j++) s.digits[size_t(3 * p + j)] = d[at[p][j]];
+        // FILE's point: the File toggle (its lamp's wiring is not in the netlist: D302 / U346 only)
+        s.digits[DigitFile] = uint8_t((d[0] & 0x7f) | (cop_->file_mode() ? 0x80 : 0));
+        s.digits[DigitLoc] = d[16];
+        s.leds[LedFreeze] = cop_->freeze() ? 255 : 0;
+        s.leds[LedEnhance] = cop_->enhance() ? 255 : 0;
+    }
     static kit::Info make_info();
     friend const kit::MachineType& qrsplug::machine_type();
 
@@ -590,15 +832,32 @@ private:
     mutable std::atomic<long> meter_frames_{0};   // 80 kHz frames since the panel last looked
     mutable float meter_db_[6] = {-120, -120, -120, -120, -120, -120};
     mutable std::atomic<float> meter_[6] = {};
+
+    // the COP panel (control thread; null without the COP ROMs)
+    static constexpr const char* kStateTag = "QRSCOP1";
+    static constexpr long kCountsPerFrame = 64;          // 5.12 MHz / 80 kHz
+    static constexpr double kCopMaxLag = 2.0;            // s of machine time per pump, at most (idle: skipped, cheap)
+    static constexpr long kCopSlice = 5120;              // 1 ms: Kill / Enter watched this often
+    static constexpr double kBlinkHalf = 0.25;           // s: the blink oscillator (its RC isn't in the netlist)
+    static constexpr double kKnobPhase = 0.0035;         // s per quadrature phase (the stretchers need > 2 ms)
+    static constexpr int kKnobDetentsPerCall = 4;
+    std::unique_ptr<qrs::CopPanel> cop_;
+    Image cop_rom_[2] = {};
+    std::string cop_note_;
+    int seen_rec_[8] = {};
+    bool seen_freeze_ = false, kill_seen_ = false, cop_enter_ = false;
+    uint32_t kill_serial_ = 0;
+    long long cop_offset_ = 0;
+    std::atomic<long long> audio_frames_{0};             // 80 kHz frames processed (audio thread)
 };
 
-std::unique_ptr<kit::Machine> boot(const kit::RomSet& roms, const std::string&, std::string* err) {
+std::unique_ptr<kit::Machine> boot(const kit::RomSet& roms, const std::string& state, std::string* err) {
     if (!roms.complete()) {
         *err = "ROMs missing";
         return nullptr;
     }
     auto m = std::make_unique<QrsMachine>();
-    if (!m->boot(roms, err)) return nullptr;
+    if (!m->boot(roms, state, err)) return nullptr;
     return m;
 }
 
@@ -667,9 +926,14 @@ kit::Info QrsMachine::make_info() {
          {"0003ce18", "u508"}},
         {"DY U633", {2048}, {{kDyChip, "card 4 (0005da61)"}},
          {"0005da61", "u633", "u635"}},
+        // optional: the controller's PROMs. With both, the panel is the unit's own controller and panel
+        // boards at gate level (keys, knob, displays, memories, Kill / Enter); without, a hand-written panel.
+        {"COP U308 (display)", {2048}, {{kCopDisplay, "card 1 (10052635)"}}, {"10052635", "u308"}, true},
+        {"COP U309 (microcode)", {2048}, {{kCopMicrocode, "card 1 (20023330)"}}, {"20023330", "u309"}, true},
     };
     i.about = "An emulation of a 1982 digital reverb from its schematics and ROMs. Bring your own ROM images "
-              "(MY U426, SIP U508, DY U633: 2716s). Not affiliated with or endorsed by the maker.";
+              "(MY U426, SIP U508, DY U633: 2716s; optionally the controller's COP U308 and U309, which make the "
+              "front panel the unit's own). Not affiliated with or endorsed by the maker.";
     return i;
 }
 

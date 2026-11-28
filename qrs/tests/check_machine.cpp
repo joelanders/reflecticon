@@ -249,7 +249,13 @@ int main(int argc, char** argv) {
 
     std::printf("4. the hardware panel\n");
     fails += kit_test::run_panel_layout_checks(t, roms);
-    {
+    const bool have_cop = roms.slots.size() > 4 && roms.slots[3].found && roms.slots[4].found;
+    kit::RomSet hand_roms = roms;   // the same without the COP ROMs: the hand-written panel
+    for (size_t i = 3; i < hand_roms.slots.size(); i++) hand_roms.slots[i].found = false;
+    const kit::RomSet& cop_roms = roms;
+    for (int pass = 0; pass < (have_cop ? 2 : 1); pass++) {
+        const kit::RomSet& roms = pass == 0 ? hand_roms : cop_roms;
+        std::printf("   %s\n", pass == 0 ? "the hand-written panel (no COP ROMs)" : "the unit's controller and panel (COP ROMs)");
         kit_test::Params p(t.info);
         kit::Host* hp = nullptr;
         kit_test::render(t, roms, p, 48000, 0.3, [](int) { return 256; }, &hp);
@@ -257,20 +263,42 @@ int main(int argc, char** argv) {
         kit_test::press(*h, {2 * qrsplug::PRoom + 2});   // room size [+]
         check(kit_test::adopt(*h, p) && std::lround(p.v[Room].load()) == 4, "room size [+]: 10^3 -> 10^4 m3");
         kit_test::run_audio(*h, 0.1);
-        auto s = h->panel();
-        check(s.digits[3 * qrsplug::PRoom + 0] == 0x06 && s.digits[3 * qrsplug::PRoom + 1] == (0x3F | 0x80) &&
-                  s.digits[3 * qrsplug::PRoom + 2] == 0x66,
-              "the room display shows 10.4");
+        {   // the selected parameter's display blinks on the unit: shown or dark, and shown at times
+            int shown = 0, other = 0;
+            for (int k = 0; k < 8; k++) {
+                const auto s = h->panel();
+                const uint8_t* d = &s.digits[3 * qrsplug::PRoom];
+                if (d[0] == 0x06 && d[1] == (0x3F | 0x80) && d[2] == 0x66) shown++;
+                else if (d[0] || d[1] || d[2]) other++;
+                kit_test::run_audio(*h, 0.07);
+            }
+            check(shown > 0 && other == 0, "the room display shows 10.4");
+        }
         h->panel_input(qrsplug::kKnobInput, 0.5f);
         h->panel_input(qrsplug::kKnobInput, 0.6f);   // the knob, now on room size: +6 steps, held at 10^6
         kit_test::run_audio(*h, 0.1);
         check(kit_test::adopt(*h, p) && std::lround(p.v[Room].load()) == 6, "the knob follows the last key: room size up to 10^6 m3");
-        kit_test::press(*h, {qrsplug::KeyStar, qrsplug::KeyMem1 + 7, qrsplug::KeyMem1 + 5});   // * 8 6: file 8, loc 6
+        // * 8 * 6: File mode, file 8, File mode off, location 6 ("*" toggles, as on the unit)
+        kit_test::press(*h, {qrsplug::KeyStar, qrsplug::KeyMem1 + 7, qrsplug::KeyStar, qrsplug::KeyMem1 + 5});
         check(kit_test::adopt(*h, p) && std::lround(p.v[Room].load()) == 2 && std::lround(p.v[Time].load()) == 32,
-              "memory * 8 6 recalls 8.6 (living room: 10^2 m3, 0.4 s)");
+              "memory * 8 * 6 recalls 8.6 (living room: 10^2 m3, 0.4 s)");
+        {
+            const auto s = h->panel();
+            check(s.digits[qrsplug::DigitFile] == 0x7F && (s.digits[qrsplug::DigitLoc] & 0x7f) == 0x7D,
+                  "FILE shows 8 (no File point), LOC 6");
+        }
         kit_test::press(*h, {qrsplug::KeyFreeze});
         check(kit_test::adopt(*h, p) && p.v[Freeze].load() > 0.5f && h->panel().leds[qrsplug::LedFreeze] == 255,
               "FRE turns freeze on, and its LED");
+        if (pass == 1) {   // the battery RAM: saved with the session, back on the next boot
+            const std::string st = h->machine_state();
+            std::string err;
+            auto m2 = t.boot(roms, st, &err);
+            check(st.size() == 7 + 512 + 2 && m2 && m2->state() == st,
+                  "the battery RAM and location come back from the saved state (" + std::to_string(st.size()) + " bytes)");
+            auto m3 = t.boot(roms, "", &err);
+            check(m3 && m3->state() != st, "  and a new unit starts from the factory fill");
+        }
     }
 
     std::printf("5. host checks\n");
@@ -414,24 +442,24 @@ int main(int argc, char** argv) {
         float pk = 0;
         bool finite = true;
         for (float x : r.l) pk = std::max(pk, std::fabs(x)), finite = finite && std::isfinite(x);
-        check(energy(r.l, 1.02, 1.5) == 0, "room 10^3 -> 10^4 m3 at 1.0 s: the output mutes for 0.5 s");
+        check(energy(r.l, 1.02, 1.45) == 0, "room 10^3 -> 10^4 m3 at 1.0 s: the output mutes (0.5 s; 0.45 s, Kill's, with the COP panel)");
         check(energy(r.l, 1.6, 2.0) > 0 && finite && pk < 1.0f, "  then the kept memory rings on in the new room (peak " + fmt1(20 * std::log10(pk)) + " dBFS)");
         // a memory recall from the panel: a real unit silences the output and clears the reverb (two
         // recordings, quantec notes 2026-11-28-0314), also when the room stays the same. 7.6 (church,
-        // 10^5 m3, 4.5 s) rings, then * 7 6 recalls it again at 1.0 s.
+        // 10^5 m3, 4.5 s) rings, then * 7 * 6 recalls it again at 1.0 s.
         auto church = [](kit::Host& h, kit_test::Params& p, int at, bool recall) {
             if (at == 0) {
-                kit_test::press(h, {qrsplug::KeyStar, qrsplug::KeyMem1 + 6, qrsplug::KeyMem1 + 5}, 0.0, 0.0);
+                kit_test::press(h, {qrsplug::KeyStar, qrsplug::KeyMem1 + 6, qrsplug::KeyStar, qrsplug::KeyMem1 + 5}, 0.0, 0.0);
                 kit_test::adopt(h, p);
                 h.sync();
             }
-            if (recall && at >= 48000 && at < 48512) kit_test::press(h, {qrsplug::KeyStar, qrsplug::KeyMem1 + 6, qrsplug::KeyMem1 + 5}, 0.0, 0.0);
+            if (recall && at >= 48000 && at < 48512) kit_test::press(h, {qrsplug::KeyStar, qrsplug::KeyMem1 + 6, qrsplug::KeyStar, qrsplug::KeyMem1 + 5}, 0.0, 0.0);
         };
         kit_test::Params pk1(t.info), pk2(t.info);
         auto keep = impulse(t, roms, pk1, 2.5, 100, [&](kit::Host& h, kit_test::Params& p, int at) { church(h, p, at, false); });
         auto rec = impulse(t, roms, pk2, 2.5, 100, [&](kit::Host& h, kit_test::Params& p, int at) { church(h, p, at, true); });
-        check(std::lround(pk2.v[Room].load()) == 5 && energy(keep.l, 1.0, 1.5) > 0, "memory * 7 6 loads the church (10^5 m3), which rings past 1.0 s");
-        check(energy(rec.l, 1.02, 1.5) == 0, "recalling it again at 1.0 s mutes the output for 0.5 s");
+        check(std::lround(pk2.v[Room].load()) == 5 && energy(keep.l, 1.0, 1.5) > 0, "memory * 7 * 6 loads the church (10^5 m3), which rings past 1.0 s");
+        check(energy(rec.l, 1.02, 1.45) == 0, "recalling it again at 1.0 s mutes the output (0.5 s; Kill's 0.45 s with the COP panel)");
         const double after = 10 * std::log10((energy(rec.l, 1.6, 2.5) + 1e-30) / energy(keep.l, 1.6, 2.5));
         check(after < -60, "  and the reverb is cleared: 1.6-2.5 s " + fmt1(after) + " dB against no recall");
     }
