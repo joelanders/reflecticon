@@ -2,18 +2,20 @@
 // reference photo (local reference only: nothing of it is shipped, this is a vector drawing at its
 // positions). 19" 2U, millimetres.
 //
-// The panel's own schematic sheet (TE/TD) is not transcribed: the key behaviour follows the owner's
-// manual (pp 9-14, 22-23), not the circuit. Each parameter has [-] and [+]; touching one also assigns
-// the central knob to that parameter. MEMORY recalls the factory programs (files 7 and 8, locations
-// 2-8): "*" then a digit picks the file, a digit alone the location. Copying ("=") and the user
-// memories are not modelled; ENHANCE is drawn only.
+// Two panels behind one drawing. With the COP PROMs (card 1, U308 / U309) the keys, knob, displays and
+// LEDs are the unit's controller and panel boards at gate level (qrs/core/cop_panel.hpp): its memories,
+// copying, blinking, Kill and Enter included. Without them a hand-written panel follows the owner's
+// manual (pp 9-14, 22-23): each parameter's [-] / [+] steps it and assigns the central knob to it;
+// MEMORY recalls the factory programs (files 7 and 8, locations 2-8): "*" toggles File mode, where a
+// digit picks the file (LOC back to 1), and a digit outside it the location. There copying ("=") and
+// the user memories are not modelled, and ENHANCE is drawn only.
 //
 // Ids:
 //   keys     1-16 the parameters' [-]/[+] (2p+1 = [-], 2p+2 = [+], p in Param order: 1st reflection
 //            delay, level, reverb delay, level, high end, reverb time, low end, room size),
 //            20 ENT, 21 MUTE, 22 FRE, 23 ENH and 24 power (drawn only: no action); 31-38 memory
 //            digits 1-8, 39 "*", 40 "=" (no action)
-//   LEDs     0 FREEZE, 1-60 the meters (6 bars x 10, top first: inputs L, R, outputs 1-4)
+//   LEDs     0 FREEZE, 1-60 the meters (6 bars x 10, top first: inputs L, R, outputs 1-4), 61 ENHANCE
 //   digits   0-23 the eight 3-digit displays in Param order, 24 FILE, 25 LOC
 //   input    1 the central knob (0..1; its movement steps the assigned parameter)
 #pragma once
@@ -24,7 +26,7 @@ namespace qrsplug {
 enum QrsPanelParam { PReflDelay, PReflLevel, PRevDelay, PRevLevel, PHigh, PTime, PLow, PRoom, NumPanelParams };
 enum QrsKey { KeyEnter = 20, KeyMute = 21, KeyFreeze = 22, KeyEnhance = 23, KeyPower = 24, KeyMem1 = 31, KeyStar = 39,
               KeyEquals = 40 };
-enum QrsLed { LedFreeze = 0, LedMeter0 = 1, NumMeterLeds = 10, NumQrsLeds = 1 + 6 * NumMeterLeds };
+enum QrsLed { LedFreeze = 0, LedMeter0 = 1, NumMeterLeds = 10, LedEnhance = 1 + 6 * NumMeterLeds, NumQrsLeds };
 enum QrsDigit { DigitFile = 24, DigitLoc = 25, NumQrsDigits = 26 };
 constexpr int kKnobInput = 1;
 // the meters' scale, top first (0 dB = nominal = 12 dB below full scale, manual pp 3, 35)
@@ -113,7 +115,7 @@ inline kit::PanelLayout qrs_layout() {
     key(127.4f, 51.1f, KeyFreeze, "FRE", "f"), L.elements.back().size = 3.2f;
     key(127.4f, 66.5f, KeyEnhance, "ENH", ""), L.elements.back().size = 3.2f;
     led(122.4f, 46.3f, LedFreeze, 1.6f, 0xffff3020);
-    led(122.4f, 61.7f, -1, 1.6f, 0xffff3020);
+    led(122.4f, 61.7f, LedEnhance, 1.6f, 0xffff3020);
 
     // parameters
     frame(147.8f, 6.4f, 336.5f, 79.4f, "PARAMETERS");
@@ -184,10 +186,12 @@ inline kit::PanelLayout qrs_layout() {
     L.elements.back().colour = 0xffffd0d0;
 
     L.notes = "Each parameter's - and + step it and assign the central knob to it. ENT opens the input while held "
-              "in FREEZE; MUTE clears the reverb memory. MEMORY recalls the factory programs: * then a digit picks "
-              "the file (7 or 8), a digit the location (2-8). The panel's circuit is not transcribed: the keys follow "
-              "the manual. ENHANCE, copying (=) and the user memories are not modelled. The meters are the plugin's "
-              "own (0 dB = 12 dB below converter full scale, as on the unit).";
+              "in FREEZE; MUTE clears the reverb memory. MEMORY: * toggles File mode, where a digit picks the file; "
+              "outside it a digit recalls that location (files 7 and 8 hold the factory programs, 2-8). Location 1 "
+              "is the one you edit. With the COP ROMs this is the unit's own controller and panel, memories and "
+              "copying (=) included; without them, a panel written from the manual (no copying or user memories, "
+              "ENHANCE drawn only). The meters are the plugin's own (0 dB = 12 dB below converter full scale, as on "
+              "the unit).";
     return L;
 }
 

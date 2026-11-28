@@ -24,6 +24,7 @@ struct RomSpec {
     std::vector<size_t> sizes;            // accepted file sizes
     std::vector<KnownRom> known;          // in order of preference when several are offered
     std::vector<std::string> name_hints;  // case-insensitive substrings of the file name
+    bool optional = false;                // the machine runs without it (a feature it adds is off)
 };
 
 struct RomFile {
@@ -37,11 +38,12 @@ struct RomSet {
         bool found = false, known = false;
         std::string label;   // the known dump's label, or the file name
         RomFile file;
+        bool optional = false;   // from the RomSpec
     };
     std::vector<Slot> slots;   // one per RomSpec, in table order
 
     bool complete() const {
-        return !slots.empty() && std::all_of(slots.begin(), slots.end(), [](const Slot& s) { return s.found; });
+        return !slots.empty() && std::all_of(slots.begin(), slots.end(), [](const Slot& s) { return s.found || s.optional; });
     }
     const std::vector<uint8_t>& bytes(size_t i) const { return slots.at(i).file.bytes; }
     std::string describe(const std::vector<RomSpec>& specs) const {
@@ -50,7 +52,7 @@ struct RomSet {
             const Slot* sl = i < slots.size() ? &slots[i] : nullptr;
             if (!s.empty()) s += ", ";
             s += specs[i].role + ": ";
-            if (!sl || !sl->found) s += "missing";
+            if (!sl || !sl->found) s += specs[i].optional ? "not given (optional)" : "missing";
             else if (sl->known) s += sl->label;
             else s += sl->label + " (not a known dump)";
         }
@@ -94,6 +96,7 @@ inline RomSet recognise(const std::vector<RomSpec>& specs, const std::vector<Rom
                     break;
                 }
         }
+    for (size_t r = 0; r < specs.size(); r++) set.slots[r].optional = specs[r].optional;
     return set;
 }
 
