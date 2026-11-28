@@ -83,6 +83,10 @@ in C++ and was gate-checked in the project against the COP's own microcode.
     room.
 
   The manual names no clearing for either.
+- **A memory recall from the panel** mutes the output for 0.5 s and clears the reverb, also when the
+  room stays the same, as both recordings of a real unit show (0.2-0.65 s silences, the earlier tail
+  gone). The manual doesn't mention it. It is most likely the COP firmware raising Kill, which the plugin
+  doesn't run. A host preset change can't be told apart from automation, so it doesn't clear.
 - **Extremes, at 10^6 m^3 and 100 s:**
   - with LOW / HIGH at both panel limits, and with the SIP repaired or as dumped, there is no growth
     over 15 s;
@@ -115,8 +119,6 @@ in C++ and was gate-checked in the project against the COP's own microcode.
     1 kHz.
   - File 8 location 8 fits no setting, the other factory programs included. The unit's program may
     differ from the manual's table.
-  - The real unit clears the reverb on a memory recall, with a 0.2-0.65 s silence. The plugin keeps
-    the memory, as it does on a room change.
 - **8 kHz response:** XLR in to XLR out is -5.9 dB at 8 kHz in the model, where the manual's
   specification says -3 dB (the project's note 2026-11-18-0129). The real unit's reverb matches the
   model at 8 kHz within 0.7 dB.

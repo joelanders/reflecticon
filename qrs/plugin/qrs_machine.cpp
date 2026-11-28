@@ -54,6 +54,7 @@ struct Ctl {   // control -> audio
     int outputs = 0;
     bool invert24 = true;
     uint32_t mute_serial = 0;
+    uint32_t recall_serial = 0;   // a memory recall from the panel: clears the reverb, as MUTE does
 };
 
 // The factory programs, files 7 ("Loudspeakers") and 8 ("Headphones"), locations 2-8 (manual p 46): HIGH,
@@ -328,6 +329,7 @@ public:
         if (v[Mute] > 0.5f && !mute_held_) mute_serial_++;
         mute_held_ = v[Mute] > 0.5f;
         c.mute_serial = mute_serial_;
+        c.recall_serial = recall_serial_;
         ctl_ = c;
         ctls_.post(c);
         for (auto it = pending_.begin(); it != pending_.end();)   // the host has taken a panel setting
@@ -399,6 +401,12 @@ public:
                 if (f.file == file_ && f.loc == loc_) {
                     const auto vals = factory_values(f);
                     for (size_t i = 0; i < vals.size(); i++) set_from_panel(int(i), vals[i]);
+                    // A real unit silences its output and clears the reverb on a recall (two recordings of
+                    // file 7 / 8 recalls, quantec notes 2026-11-28-0314): posted now, so it also happens
+                    // when the recalled values equal the current ones.
+                    recall_serial_++;
+                    ctl_.recall_serial = recall_serial_;
+                    ctls_.post(ctl_);
                 }
         }
     }
@@ -465,7 +473,7 @@ public:
         Ctl c;
         if (ctls_.take(c)) {
             if (c.s.room != cur_.s.room) mute_left_ = long(kMuteSeconds * qrs::FS4);
-            if (c.mute_serial != cur_.mute_serial) {
+            if (c.mute_serial != cur_.mute_serial || c.recall_serial != cur_.recall_serial) {
                 unit_->clear();
                 mute_left_ = long(kMuteSeconds * qrs::FS4);
             }
@@ -567,6 +575,7 @@ private:
     std::vector<float> v_;
     std::string rom_note_;
     uint32_t mute_serial_ = 0;
+    uint32_t recall_serial_ = 0;
     bool mute_held_ = false;
 
     // the panel (control thread)

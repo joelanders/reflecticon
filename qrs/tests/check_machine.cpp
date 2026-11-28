@@ -416,6 +416,24 @@ int main(int argc, char** argv) {
         for (float x : r.l) pk = std::max(pk, std::fabs(x)), finite = finite && std::isfinite(x);
         check(energy(r.l, 1.02, 1.5) == 0, "room 10^3 -> 10^4 m3 at 1.0 s: the output mutes for 0.5 s");
         check(energy(r.l, 1.6, 2.0) > 0 && finite && pk < 1.0f, "  then the kept memory rings on in the new room (peak " + fmt1(20 * std::log10(pk)) + " dBFS)");
+        // a memory recall from the panel: a real unit silences the output and clears the reverb (two
+        // recordings, quantec notes 2026-11-28-0314), also when the room stays the same. 7.6 (church,
+        // 10^5 m3, 4.5 s) rings, then * 7 6 recalls it again at 1.0 s.
+        auto church = [](kit::Host& h, kit_test::Params& p, int at, bool recall) {
+            if (at == 0) {
+                kit_test::press(h, {qrsplug::KeyStar, qrsplug::KeyMem1 + 6, qrsplug::KeyMem1 + 5}, 0.0, 0.0);
+                kit_test::adopt(h, p);
+                h.sync();
+            }
+            if (recall && at >= 48000 && at < 48512) kit_test::press(h, {qrsplug::KeyStar, qrsplug::KeyMem1 + 6, qrsplug::KeyMem1 + 5}, 0.0, 0.0);
+        };
+        kit_test::Params pk1(t.info), pk2(t.info);
+        auto keep = impulse(t, roms, pk1, 2.5, 100, [&](kit::Host& h, kit_test::Params& p, int at) { church(h, p, at, false); });
+        auto rec = impulse(t, roms, pk2, 2.5, 100, [&](kit::Host& h, kit_test::Params& p, int at) { church(h, p, at, true); });
+        check(std::lround(pk2.v[Room].load()) == 5 && energy(keep.l, 1.0, 1.5) > 0, "memory * 7 6 loads the church (10^5 m3), which rings past 1.0 s");
+        check(energy(rec.l, 1.02, 1.5) == 0, "recalling it again at 1.0 s mutes the output for 0.5 s");
+        const double after = 10 * std::log10((energy(rec.l, 1.6, 2.5) + 1e-30) / energy(keep.l, 1.6, 2.5));
+        check(after < -60, "  and the reverb is cleared: 1.6-2.5 s " + fmt1(after) + " dB against no recall");
     }
     {
         // extreme settings through the core at 20 kHz: 1 s of noise, then 14 s of silence
