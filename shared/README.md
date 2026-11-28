@@ -1,6 +1,6 @@
 # Shared code
 
-The plugin and web framework every machine folder (`rmx16/`, `dmx1580/`, `dn780/`, `sg323/`) is
+The plugin and web framework every machine folder (`rmx16/`, `dmx1580/`, `dn780/`, `sg323/`, `qrs/`) is
 built on. Imported 2026-11-20 from the private gear-plugins repo, where it was
 `shared/plugin-kit/`; the code still calls itself the kit (`kit::`, `kit_*.cpp`,
 `add_machine_plugin`). Their plugin names and codes are listed in the top-level README. The 224's own plugin (`224/juce-plugin/`) is not built on this yet.
@@ -47,6 +47,7 @@ build/dn780/dn780_check_machine <folder with the v2.2 EPROM image>
 build/rmx16/rmx16_check_machine <folder with R316 and IC1-IC4 of v3.2>
 build/dmx1580/dmx1580_check_machine <folder with DMX23-3 and DMX-10-SHL-406-1/2/3>
 build/sg323/sg323_check_machine <folder with the 0803-0808 PROM images, binary>
+build/qrs/qrs_check_machine <folder with the MY U426, SIP U508 and DY U633 PROM images, binary>
 ```
 
 ## In the browser
@@ -62,6 +63,7 @@ kept in the browser). See `web/README.md`.
 | RMX16 (v3.2 firmware) | plugin builds; kit checks, typed-settings checks on all 17 programs and pluginval (strictness 10) pass. The whole machine runs live (32x real time); settings are typed on its keys and read back from its display. Hardware panel (2026-11-18): a vector front panel whose keys, pots and power switch go straight to the firmware, with what they set adopted as parameters; stores live in the battery RAM, saved with the session. Not yet: ECHO's B side, the input/output level stage and o/flo LEDs; the plugin's name and the output labelling (A/B) are open |
 | DMX 15-80 (DMX23-3 + SHL-406 extender) | plugin builds; kit checks, typed-settings checks (delay and pitch per channel, clamps, RAM fits, one pitch board), delays heard at the typed times and pluginval (strictness 10) pass. The core matches the DMX project's engine byte for byte. The whole machine runs live (8-11x real time); delay and pitch are typed on its keypad and read back from its display; the knobs and switches apply directly (regen as the drawn F/B GAIN and F/B FILTER pots, 2026-11-18); a machine-option change builds a new machine with the settings typed in. Hardware panel (2026-11-18): a vector front panel whose keypad and nudge keys go straight to the firmware (delay/pitch typed there are adopted as parameters), knobs and switches bound to the parameters, h/room LEDs from the output level. Not yet: stores saved with the session, loop mode, power/reset; the plugin's name is open |
 | StarGate 323 (PROMs 0803-0808) | plugin builds; kit checks, readout checks (all 16 predelay times from the PROMs), an impulse heard at the set predelay and pluginval (strictness 10) pass. The core is the StarGate project's C++ port of its Python model, byte for byte with the same float flags. Runs at 192 kHz inside (45x real time). Panel labels and order, with Input mute (2026-11-18). Not yet: clock drift and source level are not modelled; the plugin's name is open |
+| QRS (PROMs MY U426, SIP U508, DY U633) | plugin builds; kit checks, readout checks, the factory programs' reverb times (within 6 % of the QRS project's measurements), an impulse through the host (delays, FREEZE, MUTE), panel checks, ROM handling (near-miss SIP repair, swapped slots, page-level diffs), changes while a tail rings, extremes, 44.1-192 kHz, blocks 1-4096, auval and pluginval (strictness 10) pass. The core is the QRS project's C++ port, bit-exact with its gate-checked model from ADC words to DAC words; the converters run at 80 kHz inside (68x real time). The known SIP dump's seven rotted bytes are repaired by masks. Hardware panel (2026-11-26) drawn from the manual. Not yet: compared with a real unit (8 kHz -5.9 dB against the spec's -3, the RT offset); ENHANCE, copying and the user memories |
 
 Planned: the others (the two Ursa Majors next).
 

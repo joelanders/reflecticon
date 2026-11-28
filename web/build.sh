@@ -41,3 +41,4 @@ ARGS="$*"
 [ -z "$ARGS" ] || want rmx16 && build rmx16 rmx16plug $ROOT/rmx16/core/rmx16_core.c
 [ -z "$ARGS" ] || want dmx1580 && build dmx1580 dmx1580plug
 [ -z "$ARGS" ] || want sg323 && build sg323 sg323plug
+[ -z "$ARGS" ] || want qrs && build qrs qrsplug

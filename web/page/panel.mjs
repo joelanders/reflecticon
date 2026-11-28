@@ -192,7 +192,7 @@ export class Panel {
     el('rect', { x: e.x + 0.25, y: e.y + 0.25, width: e.w - 0.5, height: e.h - 0.5, rx: 0.5, class: 'cap' }, body);
     if (e.style === 0) el('rect', { x: e.x + 0.25, y: e.y + 0.25, width: e.w - 0.5, height: (e.h - 0.5) * 0.42, rx: 0.5, class: 'slope' }, body);
     if (e.text) {
-      const t = el('text', { x: e.x + e.w / 2, y: e.y + e.h / 2 + 0.2, 'text-anchor': 'middle', 'dominant-baseline': 'central', class: 'legend', ...this.font(e.h * 0.35, false) }, body);
+      const t = el('text', { x: e.x + e.w / 2, y: e.y + e.h / 2 + 0.2, 'text-anchor': 'middle', 'dominant-baseline': 'central', class: 'legend', ...this.font(e.size > 0 ? e.size : e.h * 0.35, false) }, body);
       t.textContent = e.text;
     }
     for (const l of leds) this.leds.push({ e: this.led(body, l), id: l.id });

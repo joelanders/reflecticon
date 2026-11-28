@@ -2,11 +2,12 @@
 
 This started as an emulation of one reverb machine from the service manual schematics: the 1978 Lexicon 224 (and 224x and 224xl).
 
-I've since added four more early reverbs and delay units:
+I've since added five more early reverbs and delay units:
 * AMS RMX16
 * AMS DMX 15-80s
 * Klark Teknik DN780
 * Ursa Major StarGate 323
+* Quantec QRS
 
 The Lexicon 224 has a web demo (you still need to supply the ROMs): https://joelanders.github.io/reflecticon/
 
@@ -45,13 +46,13 @@ The plugin:
   isa-level-cpp        The fast version
   schematics
   web-demo
-rmx16/  dmx1580/  dn780/  sg323/
+rmx16/  dmx1580/  dn780/  sg323/  qrs/
   core/         the emulator
   plugin/       the plugin's machine definition and front panel
   tests/        check_machine: the machine against its ROMs
 shared/         code the machines above share: the plugin framework (JUCE), ROM recognition,
                 threading, the hardware-panel API, host checks
-web/            one web page for rmx16, dmx1580, dn780 and sg323
+web/            one web page for rmx16, dmx1580, dn780, sg323 and qrs
 notes/          notes that span machines
 ```
 
